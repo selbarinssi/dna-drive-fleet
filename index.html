@@ -996,13 +996,22 @@ async function saveSchedule(){
 }
 
 // ---- POST ----
-async function postAction(payload){
+async function postAction(payload) {
   try {
-    const res=await fetch(API_URL, {method:'POST', body:JSON.stringify(payload), headers:{'Content-Type':'application/json'}});
-    const data=await res.json();
-    if(!data.ok) toast('Error: '+(data.error||'Unknown'),'err');
-    return data;
-  } catch(e){ toast('Network error. Check connection.','err'); console.error(e); }
+    const action = payload.action;
+    const data = encodeURIComponent(JSON.stringify(payload));
+    const res = await fetch(
+      API_URL + '?action=' + action + '&payload=' + data + '&t=' + Date.now(),
+      { redirect: 'follow' }
+    );
+    const text = await res.text();
+    const json = JSON.parse(text);
+    if (!json.ok) toast('Error: ' + (json.error || 'Unknown'), 'err');
+    return json;
+  } catch(e) {
+    toast('Network error. Check connection.', 'err');
+    console.error(e);
+  }
 }
 
 // ---- TOAST ----

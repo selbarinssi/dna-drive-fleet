@@ -241,7 +241,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14
 //         diagExpiry, insuranceExpiry, regExpiry
 // ============================================================
   async function loadVehicles() {
-    const url = "YOUR_WEB_APP_URL_HERE";
+    const url = "https://script.google.com/macros/s/AKfycbwf56LwScE6MpM6R791gJ9DTPwveaQUOhqdUkRAg7VqajOlOcJLgiPZmNY0ctHgAhlHRQ";
     const res = await fetch(url);
     const raw = await res.json();
     // map your column names to the dashboard fields
@@ -253,7 +253,6 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14
       lastOilKm: Number(r['Last Oil Change']) || 0,
       fuelCard: String(r['Fuel Card']),
       pin: String(r['PIN']),
-      ...etc
     }));
   }
 

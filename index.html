@@ -579,12 +579,18 @@ function setSyncState(state, msg){
   lbl.textContent = msg;
 }
 
-async function fetchData(manual){
-  if(manual) setSyncState('stale','Refreshing…');
+async function fetchData(manual) {
+  if (manual) setSyncState('stale', 'Refreshing…');
   try {
     const [vRes, lRes] = await Promise.all([
-      fetch(API_URL + '?action=getVehicles&t=' + Date.now()),
-      fetch(API_URL + '?action=getLogs&t=' + Date.now())
+      fetch(API_URL + '?action=getVehicles&t=' + Date.now(), {
+        redirect: 'follow',
+        mode: 'cors'
+      }),
+      fetch(API_URL + '?action=getLogs&t=' + Date.now(), {
+        redirect: 'follow',
+        mode: 'cors'
+      })
     ]);
     const vData = await vRes.json();
     const lData = await lRes.json();

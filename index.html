@@ -1,214 +1,569 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>IKEA Drive - Fleet Monitor</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
-  <style>
-    body {
-      font-family: 'Roboto', sans-serif;
-      background-color: #FFFFFF;
-      color: #111111;
-    }
-    .header {
-      background-color: #0051BA;
-      color: white;
-      padding: 1.3rem 0;
-    }
-    .ikea-yellow { color: #FFCC00; }
-    .card { border: none; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-radius: 8px; }
-    .table th { 
-      background-color: #0051BA; 
-      color: white; 
-      position: sticky; 
-      top: 0; 
-      z-index: 10;
-      font-weight: 500;
-    }
-    .alert-row { background-color: #FFF3E0 !important; }
-    .flag-oil { background-color: #FF9800; color: white; padding: 3px 8px; border-radius: 4px; font-size: 0.85rem; }
-    .flag-tech { background-color: #F44336; color: white; padding: 3px 8px; border-radius: 4px; font-size: 0.85rem; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>D&A Drive — Fleet Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --blue:#0058a3;--blue-dark:#004f93;--blue-light:#e8f1fa;--blue-mid:#1a6fc4;
+  --yellow:#ffdb00;--yellow-dark:#e6c400;
+  --bg:#f5f5f0;--white:#fff;--border:#ddd;--border-light:#eee;
+  --text:#111;--text2:#555;--text3:#888;
+  --danger:#c62828;--danger-bg:#fce8e8;
+  --warn:#bf360c;--warn-bg:#fff3e0;
+  --ok:#1b5e20;--ok-bg:#e8f5e9;
+  --info:#0d47a1;--info-bg:#e3f2fd;
+  --font:'Noto Sans',sans-serif;
+  --radius:6px;
+}
+body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
+
+/* HEADER */
+.header{background:var(--blue);color:#fff;padding:0 28px;display:flex;align-items:center;justify-content:space-between;height:60px}
+.logo{background:var(--yellow);color:var(--blue);font-weight:700;font-size:14px;padding:6px 14px;border-radius:4px;letter-spacing:.5px}
+.header-mid{display:flex;flex-direction:column;align-items:center}
+.header-title{font-size:17px;font-weight:600}
+.header-sub{font-size:11px;opacity:.7;margin-top:1px}
+.header-right{text-align:right;font-size:12px;opacity:.75}
+
+/* TABS */
+.tabs{background:var(--blue-dark);display:flex;padding:0 28px;gap:2px;border-bottom:2px solid var(--yellow)}
+.tab{padding:11px 20px;font-size:13px;font-weight:500;color:rgba(255,255,255,.6);cursor:pointer;border-bottom:3px solid transparent;transition:all .15s;user-select:none}
+.tab:hover{color:#fff}
+.tab.active{color:var(--yellow);border-bottom-color:var(--yellow)}
+
+/* LAYOUT */
+.content{padding:22px 28px;min-height:calc(100vh - 100px)}
+.page{display:none}
+.page.active{display:block}
+
+/* KPI CARDS */
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;margin-bottom:22px}
+.kpi{background:var(--white);border-radius:var(--radius);padding:16px;border:1px solid var(--border);border-left:4px solid var(--accent,var(--blue))}
+.kpi-label{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;display:flex;align-items:center;gap:5px}
+.kpi-val{font-size:28px;font-weight:700;color:var(--accent,var(--blue));line-height:1}
+.kpi-sub{font-size:11px;color:var(--text3);margin-top:5px}
+
+/* ALERT BANNER */
+.alert{display:flex;align-items:flex-start;gap:10px;background:var(--danger-bg);border:1px solid #e57373;border-radius:var(--radius);padding:12px 16px;margin-bottom:20px;font-size:13px;color:var(--danger)}
+.alert b{font-weight:600}
+
+/* SECTIONS */
+.section{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:18px}
+.section-title{font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:14px;display:flex;align-items:center;gap:6px;padding-bottom:10px;border-bottom:1px solid var(--border-light)}
+
+/* GRID */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px}
+
+/* BAR */
+.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.bar-label{font-size:12px;color:var(--text2);width:110px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar-track{flex:1;height:9px;background:#eee;border-radius:5px;overflow:hidden}
+.bar-fill{height:100%;border-radius:5px}
+.bar-val{font-size:12px;font-weight:600;min-width:26px;text-align:right}
+
+/* STATUS BADGES */
+.badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:3px 8px;border-radius:3px;white-space:nowrap}
+.badge-danger{background:var(--danger-bg);color:var(--danger)}
+.badge-warn{background:var(--warn-bg);color:var(--warn)}
+.badge-ok{background:var(--ok-bg);color:var(--ok)}
+.badge-info{background:var(--info-bg);color:var(--info)}
+.badge-gray{background:#f0efeb;color:#555}
+
+/* MAINTENANCE LIST */
+.maint-list{display:flex;flex-direction:column;gap:8px}
+.maint-item{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:4px;border:1px solid var(--border);background:var(--bg);transition:background .1s}
+.maint-item:hover{background:#eee}
+.maint-info{flex:1;min-width:0}
+.maint-veh{font-size:13px;font-weight:600}
+.maint-meta{font-size:11px;color:var(--text3);margin-top:2px}
+.maint-right{text-align:right;flex-shrink:0}
+.maint-km{font-size:12px;font-weight:600;color:var(--text)}
+.maint-sub{font-size:11px;color:var(--text3);margin-top:2px}
+
+/* PILL */
+.pill{display:inline-block;background:var(--blue-light);color:var(--blue);font-size:10px;font-weight:600;padding:2px 7px;border-radius:3px}
+
+/* TABLE */
+.tbl{width:100%;border-collapse:collapse;font-size:12px}
+.tbl th{background:#f0eeeb;padding:9px 10px;text-align:left;font-weight:600;font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.3px;border-bottom:1px solid var(--border);white-space:nowrap}
+.tbl td{padding:8px 10px;border-bottom:1px solid var(--border-light);vertical-align:middle}
+.tbl tr:hover td{background:var(--blue-light)}
+.tbl-wrap{overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border)}
+
+/* FILTER ROW */
+.filters{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:16px}
+.fbtn{padding:5px 13px;font-size:12px;border:1px solid var(--border);border-radius:3px;background:var(--white);cursor:pointer;color:var(--text2);font-family:var(--font);transition:all .1s}
+.fbtn:hover{border-color:var(--blue);color:var(--blue)}
+.fbtn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+
+/* DONUT */
+.donut-wrap{display:flex;align-items:center;gap:20px}
+.donut-legend{display:flex;flex-direction:column;gap:7px;flex:1}
+.legend-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2)}
+.legend-sq{width:11px;height:11px;border-radius:2px;flex-shrink:0}
+
+/* SEARCH */
+.search-box{padding:7px 12px;border:1px solid var(--border);border-radius:4px;font-family:var(--font);font-size:13px;width:220px;outline:none}
+.search-box:focus{border-color:var(--blue)}
+</style>
 </head>
 <body>
 
-<div class="header text-center">
-  <h1 style="margin:0; font-weight:700;">IKEA DRIVE <span class="ikea-yellow">FLEET</span></h1>
-  <p style="margin:0; opacity:0.9;">Professional Vehicle Monitoring</p>
+<div class="header">
+  <div class="logo">D&A DRIVE</div>
+  <div class="header-mid">
+    <div class="header-title">Fleet Monitoring Dashboard</div>
+    <div class="header-sub">WAFALLD / IKEA Fleet — Real-time maintenance tracking</div>
+  </div>
+  <div class="header-right">
+    <div id="clockDate" style="font-size:13px;font-weight:600"></div>
+    <div id="clockTime" style="font-size:11px;margin-top:2px"></div>
+  </div>
 </div>
 
-<div class="container-fluid p-4">
-  <div id="status" class="alert alert-info mb-3">Loading fleet data...</div>
+<div class="tabs">
+  <div class="tab active" onclick="showPage('overview',this)">📊 Overview</div>
+  <div class="tab" onclick="showPage('maintenance',this)">🔧 Maintenance</div>
+  <div class="tab" onclick="showPage('fleet',this)">🚐 Fleet</div>
+  <div class="tab" onclick="showPage('diagnostic',this)">📅 Annual Diagnostic</div>
+</div>
 
-  <!-- Filters -->
-  <div class="row mb-3">
-    <div class="col-md-6">
-      <input type="text" id="searchInput" class="form-control" placeholder="Search by Vehicle ID, Model, Branding..." onkeyup="filterTable()">
-    </div>
-    <div class="col-md-6">
-      <select id="zoneFilter" class="form-select" onchange="filterTable()">
-        <option value="">All Zones</option>
-        <!-- Zones will be populated automatically -->
-      </select>
-    </div>
-  </div>
+<div class="content">
 
-  <!-- Summary -->
-  <div class="row g-3 mb-4">
-    <div class="col-md-3 col-6"><div class="card h-100"><div class="card-body"><h6>Total Vehicles</h6><h2 id="total" class="mb-0">0</h2></div></div></div>
-    <div class="col-md-3 col-6"><div class="card h-100"><div class="card-body"><h6>Oil Change Due</h6><h2 id="oilDue" class="mb-0 text-warning">0</h2></div></div></div>
-    <div class="col-md-3 col-6"><div class="card h-100"><div class="card-body"><h6>Technical Control Due</h6><h2 id="techDue" class="mb-0 text-danger">0</h2></div></div></div>
-    <div class="col-md-3 col-6"><div class="card h-100"><div class="card-body"><h6>Critical Alerts</h6><h2 id="alerts" class="mb-0 text-danger">0</h2></div></div></div>
-  </div>
-
-  <div class="card">
-    <div class="card-body p-0">
-      <div class="table-responsive">
-        <table class="table table-hover mb-0" id="vehicleTable">
-          <thead>
-            <tr>
-              <th>Vehicle ID</th>
-              <th>Branding</th>
-              <th>Model</th>
-              <th>Zone</th>
-              <th>Alerts</th>
-              <th>Next Oil Change</th>
-              <th>Annual Diagnostic</th>
-              <th>Reg. Expiry</th>
-              <th>Insurance Expiry</th>
-              <th>Mileage</th>
-              <th>Owner</th>
-              <th>GPS</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
+<!-- OVERVIEW -->
+<div class="page active" id="page-overview">
+  <div class="kpi-row" id="kpiRow"></div>
+  <div id="alertBanner"></div>
+  <div class="grid2">
+    <div class="section">
+      <div class="section-title">🚐 Fleet by vehicle type</div>
+      <div class="donut-wrap">
+        <canvas id="typeChart" width="130" height="130" style="flex-shrink:0"></canvas>
+        <div class="donut-legend" id="typeLegend"></div>
       </div>
     </div>
+    <div class="section">
+      <div class="section-title">📍 Fleet by operational zone</div>
+      <div id="zoneBars"></div>
+    </div>
+  </div>
+  <div class="section">
+    <div class="section-title">🛢️ Top 10 vehicles closest to oil change</div>
+    <div class="maint-list" id="oilUrgent"></div>
   </div>
 </div>
 
+<!-- MAINTENANCE / OIL CHANGES -->
+<div class="page" id="page-maintenance">
+  <div class="filters" id="oilFilters">
+    <button class="fbtn active" onclick="filterOil('all',this)">All</button>
+    <button class="fbtn" onclick="filterOil('overdue',this)">🔴 Overdue</button>
+    <button class="fbtn" onclick="filterOil('critical',this)">🟠 &lt; 2,000 km</button>
+    <button class="fbtn" onclick="filterOil('soon',this)">🟡 &lt; 5,000 km</button>
+    <button class="fbtn" onclick="filterOil('ok',this)">🟢 OK</button>
+  </div>
+  <div style="margin-bottom:12px;display:flex;align-items:center;gap:10px">
+    <input class="search-box" type="text" id="oilSearch" placeholder="Search vehicle ID, model, zone..." oninput="renderOilTable()">
+    <span id="oilCount" style="font-size:12px;color:var(--text3)"></span>
+  </div>
+  <div class="tbl-wrap">
+    <table class="tbl">
+      <thead><tr>
+        <th>Vehicle ID</th><th>Model</th><th>Zone</th><th>Current km</th>
+        <th>Last oil change km</th><th>Next oil change km</th><th>km remaining</th><th>Status</th>
+      </tr></thead>
+      <tbody id="oilTbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- FLEET -->
+<div class="page" id="page-fleet">
+  <div class="filters" id="fleetFilters">
+    <button class="fbtn active" onclick="filterFleet('all',this)">All zones</button>
+    <button class="fbtn" onclick="filterFleet('CAS',this)">Casablanca</button>
+    <button class="fbtn" onclick="filterFleet('RBA',this)">Rabat</button>
+    <button class="fbtn" onclick="filterFleet('RAK',this)">Marrakech</button>
+    <button class="fbtn" onclick="filterFleet('AGA',this)">Agadir</button>
+    <button class="fbtn" onclick="filterFleet('MKS',this)">Meknès</button>
+    <button class="fbtn" onclick="filterFleet('TRS',this)">Transport</button>
+    <button class="fbtn" onclick="filterFleet('CAB',this)">Tanger/CAB</button>
+  </div>
+  <div style="margin-bottom:12px;display:flex;align-items:center;gap:10px">
+    <input class="search-box" type="text" id="fleetSearch" placeholder="Search ID, model, chassis, zone..." oninput="renderFleetTable()">
+    <span id="fleetCount" style="font-size:12px;color:var(--text3)"></span>
+  </div>
+  <div class="tbl-wrap">
+    <table class="tbl">
+      <thead><tr>
+        <th>ID</th><th>Model</th><th>Zone</th><th>Reg. plate</th>
+        <th>Current km</th><th>Last check</th><th>Fuel card</th><th>PIN</th>
+        <th>Tyres</th><th>Oil status</th><th>Diag. expiry</th>
+      </tr></thead>
+      <tbody id="fleetTbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ANNUAL DIAGNOSTIC -->
+<div class="page" id="page-diagnostic">
+  <div class="filters" id="diagFilters">
+    <button class="fbtn active" onclick="filterDiag('all',this)">All</button>
+    <button class="fbtn" onclick="filterDiag('overdue',this)">🔴 Overdue</button>
+    <button class="fbtn" onclick="filterDiag('month1',this)">🟠 &lt; 1 month</button>
+    <button class="fbtn" onclick="filterDiag('month3',this)">🟡 &lt; 3 months</button>
+    <button class="fbtn" onclick="filterDiag('ok',this)">🟢 OK</button>
+  </div>
+  <div class="tbl-wrap">
+    <table class="tbl">
+      <thead><tr>
+        <th>Vehicle ID</th><th>Model</th><th>Zone</th><th>Annual diagnostic expiry</th>
+        <th>Days remaining</th><th>Status</th>
+      </tr></thead>
+      <tbody id="diagTbody"></tbody>
+    </table>
+  </div>
+</div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
-const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSeWe099H245LPEqHdOWqOD1TtGZuQUQxUe9BoiU_Q3z7_rMv_5eqUY2QYi2t2_2FxZ-zVZT7IfRtpj/pub?gid=633657895&single=true&output=csv";
+// ============================================================
+// VEHICLE DATA — sourced directly from Vehicles sheet
+// Next Oil Change = Last Oil Change km + 15,000
+// Fields: id, originId, model, fn (function/zone), currentKm,
+//         lastCheck, lastOilKm, fuelCard, pin, tyreRef, tyreBrand,
+//         diagExpiry, insuranceExpiry, regExpiry
+// ============================================================
+const vehicles = [
+{id:'921',originId:'594747WW',model:'RENAULT TRAFFIC VAN',fn:'DOWN',currentKm:1251,lastCheck:'13/12/2025',lastOilKm:30589,fuelCard:'504979',pin:'31929',tyreRef:'205/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'01/06/2026',regExpiry:'01/07/2026'},
+{id:'922',originId:'594748WW',model:'RENAULT TRAFFIC VAN',fn:'RAK FUR',currentKm:8359,lastCheck:'22/05/2026',lastOilKm:41261,fuelCard:'504978',pin:'51596',tyreRef:'205/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'12/05/2027',regExpiry:'01/07/2026'},
+{id:'923',originId:'594746WW',model:'RENAULT TRAFFIC VAN',fn:'CAB FUR',currentKm:7168,lastCheck:'28/05/2026',lastOilKm:50936,fuelCard:'504988',pin:'64049',tyreRef:'205/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'09/05/2027',regExpiry:'01/07/2026'},
+{id:'924',originId:'594745WW',model:'RENAULT TRAFFIC VAN',fn:'CAB FUR',currentKm:7115,lastCheck:'26/05/2026',lastOilKm:39666,fuelCard:'504989',pin:'48489',tyreRef:'205/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'11/05/2027',regExpiry:'01/07/2026'},
+{id:'925',originId:'594750WW',model:'RENAULT TRAFFIC VAN',fn:'CAS FUR',currentKm:8759,lastCheck:'28/05/2026',lastOilKm:53630,fuelCard:'504976',pin:'60545',tyreRef:'205/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'01/06/2026',regExpiry:'01/07/2026'},
+{id:'926',originId:'594320WW',model:'RENAULT TRAFFIC VAN',fn:'SAD FLOW',currentKm:9690,lastCheck:'26/05/2026',lastOilKm:31942,fuelCard:'504981',pin:'45261',tyreRef:'205/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'09/05/2027',regExpiry:'01/07/2026'},
+{id:'927',originId:'594704WW',model:'RENAULT EXPRESS VAN',fn:'IFB TRS',currentKm:2833,lastCheck:'26/05/2026',lastOilKm:19200,fuelCard:'498025',pin:'30230',tyreRef:'185/65R15 T',tyreBrand:'CONTINENTAL',diagExpiry:'10/05/2027',regExpiry:'01/07/2026'},
+{id:'928',originId:'594705WW',model:'RENAULT EXPRESS VAN',fn:'CAB KIT',currentKm:3519,lastCheck:'26/05/2026',lastOilKm:30444,fuelCard:'498341',pin:'37278',tyreRef:'185/65R15 T',tyreBrand:'CONTINENTAL',diagExpiry:'15/05/2027',regExpiry:'01/07/2026'},
+{id:'929',originId:'594706WW',model:'RENAULT EXPRESS VAN',fn:'EXTRA CU',currentKm:1404,lastCheck:'26/05/2026',lastOilKm:19881,fuelCard:'498021',pin:'30671',tyreRef:'185/65R15 T',tyreBrand:'CONTINENTAL',diagExpiry:'09/05/2027',regExpiry:'01/07/2026'},
+{id:'930',originId:'594707WW',model:'RENAULT EXPRESS VAN',fn:'CAS KIT',currentKm:1590,lastCheck:'26/05/2026',lastOilKm:23331,fuelCard:'498020',pin:'32872',tyreRef:'185/65R15 T',tyreBrand:'CONTINENTAL',diagExpiry:'04/05/2027',regExpiry:'01/07/2026'},
+{id:'931',originId:'594708WW',model:'RENAULT EXPRESS VAN',fn:'CAS FUR',currentKm:1638,lastCheck:'25/05/2026',lastOilKm:30131,fuelCard:'498019',pin:'41463',tyreRef:'185/65R15 T',tyreBrand:'CONTINENTAL',diagExpiry:'08/05/2027',regExpiry:'01/07/2026'},
+{id:'932',originId:'594321WW',model:'RENAULT TRAFFIC VAN',fn:'RBA FUR',currentKm:8489,lastCheck:'28/05/2026',lastOilKm:44988,fuelCard:'504980',pin:'61251',tyreRef:'205/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'01/06/2026',regExpiry:'01/07/2026'},
+{id:'933',originId:'594740WW',model:'RENAULT TRAFFIC VAN',fn:'MKS FUR',currentKm:3482,lastCheck:'26/05/2026',lastOilKm:20109,fuelCard:'505032',pin:'25722',tyreRef:'205/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'11/05/2027',regExpiry:'01/07/2026'},
+{id:'934',originId:'594741WW',model:'RENAULT TRAFFIC VAN',fn:'CAS FUR',currentKm:3631,lastCheck:'26/05/2026',lastOilKm:17916,fuelCard:'505031',pin:'31295',tyreRef:'205/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'11/05/2027',regExpiry:'01/07/2026'},
+{id:'935',originId:'594319WW',model:'RENAULT TRAFFIC VAN',fn:'DOWN',currentKm:9544,lastCheck:'26/12/2025',lastOilKm:29595,fuelCard:'504982',pin:'32874',tyreRef:'205/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'01/06/2026',regExpiry:'01/07/2026'},
+{id:'936',originId:'594719WW',model:'RENAULT MASTER',fn:'CU Z3Z4',currentKm:4174,lastCheck:'22/05/2026',lastOilKm:45458,fuelCard:'498008',pin:'50326',tyreRef:'225/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'10/05/2027',regExpiry:'01/07/2026'},
+{id:'937',originId:'594709WW',model:'RENAULT EXPRESS VAN',fn:'RBA FUR',currentKm:9599,lastCheck:'28/05/2026',lastOilKm:41986,fuelCard:'498018',pin:'49443',tyreRef:'185/65R15 T',tyreBrand:'CONTINENTAL',diagExpiry:'14/05/2027',regExpiry:'01/07/2026'},
+{id:'938',originId:'594718WW',model:'RENAULT EXPRESS VAN',fn:'RAK KIT',currentKm:1358,lastCheck:'26/05/2026',lastOilKm:33000,fuelCard:'498009',pin:'37284',tyreRef:'185/65R15 T',tyreBrand:'CONTINENTAL',diagExpiry:'11/05/2027',regExpiry:'01/07/2026'},
+{id:'939',originId:'594720WW',model:'RENAULT MASTER',fn:'MKS Z3Z4',currentKm:8645,lastCheck:'26/05/2026',lastOilKm:69177,fuelCard:'498007',pin:'76970',tyreRef:'225/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'11/05/2027',regExpiry:'01/07/2026'},
+{id:'940',originId:'594721WW',model:'RENAULT MASTER',fn:'CAS FUR',currentKm:5262,lastCheck:'26/05/2026',lastOilKm:43344,fuelCard:'498006',pin:'55586',tyreRef:'225/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'14/05/2027',regExpiry:'01/07/2026'},
+{id:'941',originId:'594723WW',model:'RENAULT MASTER',fn:'CAS FUR',currentKm:3002,lastCheck:'28/05/2026',lastOilKm:41800,fuelCard:'498003',pin:'52562',tyreRef:'225/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'10/05/2027',regExpiry:'01/07/2026'},
+{id:'942',originId:'594722WW',model:'RENAULT MASTER',fn:'AGA TRS',currentKm:8702,lastCheck:'26/05/2026',lastOilKm:70353,fuelCard:'498004',pin:'87468',tyreRef:'225/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'12/05/2027',regExpiry:'01/07/2026'},
+{id:'943',originId:'594724WW',model:'RENAULT MASTER',fn:'CU Z3Z4',currentKm:1589,lastCheck:'25/05/2026',lastOilKm:54882,fuelCard:'498002',pin:'69642',tyreRef:'225/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'15/05/2027',regExpiry:'01/07/2026'},
+{id:'944',originId:'594728WW',model:'RENAULT EXPRESS VAN',fn:'RAK FUR',currentKm:9807,lastCheck:'26/05/2026',lastOilKm:24009,fuelCard:'497998',pin:'35584',tyreRef:'185/65R15 T',tyreBrand:'CONTINENTAL',diagExpiry:'12/05/2027',regExpiry:'01/07/2026'},
+{id:'950',originId:'594727WW',model:'RENAULT EXPRESS VAN',fn:'EXTRA CABO',currentKm:4702,lastCheck:'24/05/2026',lastOilKm:10134,fuelCard:'497999',pin:'16442',tyreRef:'185/65R15 T',tyreBrand:'CONTINENTAL',diagExpiry:'23/05/2026',regExpiry:'01/07/2026'},
+{id:'951',originId:'594729WW',model:'RENAULT EXPRESS VAN',fn:'CAS FUR',currentKm:8294,lastCheck:'26/05/2026',lastOilKm:30800,fuelCard:'497997',pin:'40102',tyreRef:'185/65R15 T',tyreBrand:'CONTINENTAL',diagExpiry:'12/05/2027',regExpiry:'01/07/2026'},
+{id:'952',originId:'594726WW',model:'RENAULT EXPRESS VAN',fn:'CAB FUR',currentKm:2962,lastCheck:'26/05/2026',lastOilKm:31707,fuelCard:'498000',pin:'44546',tyreRef:'185/65R15 T',tyreBrand:'CONTINENTAL',diagExpiry:'23/05/2026',regExpiry:'01/07/2026'},
+{id:'953',originId:'594714WW',model:'RENAULT EXPRESS VAN',fn:'RBA FUR',currentKm:3760,lastCheck:'26/05/2026',lastOilKm:38919,fuelCard:'498013',pin:'49003',tyreRef:'185/65R15 T',tyreBrand:'CONTINENTAL',diagExpiry:'07/05/2027',regExpiry:'01/07/2026'},
+{id:'954',originId:'594701WW',model:'RENAULT MASTER',fn:'RAK FUR',currentKm:4700,lastCheck:'26/05/2026',lastOilKm:81046,fuelCard:'498028',pin:'89613',tyreRef:'225/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'09/05/2027',regExpiry:'01/07/2026'},
+{id:'955',originId:'594702WW',model:'RENAULT MASTER',fn:'CU Z3Z4',currentKm:6262,lastCheck:'26/05/2026',lastOilKm:53926,fuelCard:'498027',pin:'63293',tyreRef:'225/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'09/05/2027',regExpiry:'01/07/2026'},
+{id:'956',originId:'594703WW',model:'RENAULT MASTER',fn:'CAS FUR',currentKm:4755,lastCheck:'26/05/2026',lastOilKm:61299,fuelCard:'498026',pin:'77573',tyreRef:'225/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'10/05/2027',regExpiry:'01/07/2026'},
+{id:'957',originId:'594749WW',model:'RENAULT TRAFFIC VAN',fn:'CAS FUR',currentKm:4829,lastCheck:'25/05/2026',lastOilKm:60782,fuelCard:'504977',pin:'71027',tyreRef:'205/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'01/06/2026',regExpiry:'01/07/2026'},
+{id:'958',originId:'594710WW',model:'RENAULT EXPRESS VAN',fn:'CAS FUR',currentKm:7508,lastCheck:'26/05/2026',lastOilKm:30090,fuelCard:'498017',pin:'41503',tyreRef:'185/65R15 T',tyreBrand:'CONTINENTAL',diagExpiry:'12/05/2027',regExpiry:'01/07/2026'},
+{id:'959',originId:'594711WW',model:'RENAULT EXPRESS VAN',fn:'CAB FUR',currentKm:7755,lastCheck:'22/05/2026',lastOilKm:29171,fuelCard:'498016',pin:'39516',tyreRef:'185/65R15 T',tyreBrand:'CONTINENTAL',diagExpiry:'17/05/2026',regExpiry:'01/07/2026'},
+{id:'960',originId:'594712WW',model:'RENAULT EXPRESS VAN',fn:'CAS FUR',currentKm:3596,lastCheck:'27/05/2026',lastOilKm:28708,fuelCard:'498015',pin:'37057',tyreRef:'185/65R15 T',tyreBrand:'CONTINENTAL',diagExpiry:'08/05/2027',regExpiry:'01/07/2026'},
+{id:'961',originId:'594716WW',model:'RENAULT EXPRESS VAN',fn:'CAB FUR',currentKm:6284,lastCheck:'25/05/2026',lastOilKm:40900,fuelCard:'498011',pin:'45157',tyreRef:'185/65R15 T',tyreBrand:'CONTINENTAL',diagExpiry:'15/05/2027',regExpiry:'01/07/2026'},
+{id:'962',originId:'594316WW',model:'RENAULT TRAFFIC VAN',fn:'RAK FUR',currentKm:7125,lastCheck:'25/05/2026',lastOilKm:51851,fuelCard:'504985',pin:'61605',tyreRef:'205/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'10/05/2027',regExpiry:'01/07/2026'},
+{id:'963',originId:'594314WW',model:'RENAULT TRAFFIC VAN',fn:'RBA FUR',currentKm:2074,lastCheck:'26/05/2026',lastOilKm:43960,fuelCard:'504987',pin:'55256',tyreRef:'205/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'01/06/2026',regExpiry:'01/07/2026'},
+{id:'964',originId:'594737WW',model:'RENAULT TRAFFIC VAN',fn:'CAB FUR',currentKm:8910,lastCheck:'26/05/2026',lastOilKm:49349,fuelCard:'505035',pin:'63241',tyreRef:'205/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'10/05/2027',regExpiry:'01/07/2026'},
+{id:'965',originId:'594315WW',model:'RENAULT TRAFFIC VAN',fn:'CAB FUR',currentKm:2403,lastCheck:'28/05/2026',lastOilKm:56874,fuelCard:'504986',pin:'68763',tyreRef:'205/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'09/05/2027',regExpiry:'01/07/2026'},
+{id:'966',originId:'594739WW',model:'RENAULT TRAFFIC VAN',fn:'AGA FUR',currentKm:8097,lastCheck:'28/05/2026',lastOilKm:47889,fuelCard:'505033',pin:'60420',tyreRef:'205/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'15/05/2027',regExpiry:'01/07/2026'},
+{id:'967',originId:'594318WW',model:'RENAULT TRAFFIC VAN',fn:'TNG TRS',currentKm:9089,lastCheck:'28/05/2026',lastOilKm:51851,fuelCard:'504983',pin:'63581',tyreRef:'205/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'12/05/2027',regExpiry:'01/07/2026'},
+{id:'968',originId:'594317WW',model:'RENAULT TRAFFIC VAN',fn:'CAS FUR',currentKm:4732,lastCheck:'26/05/2026',lastOilKm:55673,fuelCard:'504984',pin:'71987',tyreRef:'205/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'01/06/2026',regExpiry:'01/07/2026'},
+{id:'969',originId:'594742WW',model:'RENAULT TRAFFIC VAN',fn:'RBA FUR',currentKm:8991,lastCheck:'28/05/2026',lastOilKm:53618,fuelCard:'507036',pin:'64145',tyreRef:'205/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'11/05/2027',regExpiry:'01/07/2026'},
+{id:'970',originId:'594743WW',model:'RENAULT TRAFFIC VAN',fn:'RBA FUR',currentKm:9274,lastCheck:'26/05/2026',lastOilKm:36000,fuelCard:'505029',pin:'43417',tyreRef:'205/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'10/05/2027',regExpiry:'01/07/2026'},
+{id:'971',originId:'594744WW',model:'RENAULT TRAFFIC VAN',fn:'CAS FUR',currentKm:7247,lastCheck:'26/05/2026',lastOilKm:43147,fuelCard:'505028',pin:'56249',tyreRef:'205/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'11/05/2027',regExpiry:'01/07/2026'},
+{id:'1110',originId:'594730WW',model:'RENAULT EXPRESS VAN',fn:'SAD FLOW',currentKm:9530,lastCheck:'15/05/2026',lastOilKm:30249,fuelCard:'497996',pin:'37484',tyreRef:'185/65R15 T',tyreBrand:'CONTINENTAL',diagExpiry:'04/05/2027',regExpiry:'01/07/2026'},
+{id:'1112',originId:'594732WW',model:'RENAULT EXPRESS VAN',fn:'CAB FUR',currentKm:8503,lastCheck:'25/05/2026',lastOilKm:30198,fuelCard:'497994',pin:'36173',tyreRef:'185/65R15 T',tyreBrand:'CONTINENTAL',diagExpiry:'23/05/2026',regExpiry:'01/07/2026'},
+{id:'1113',originId:'594725WW',model:'RENAULT EXPRESS VAN',fn:'CAB FUR',currentKm:3696,lastCheck:'26/05/2026',lastOilKm:20120,fuelCard:'498001',pin:'23661',tyreRef:'185/65R15 T',tyreBrand:'CONTINENTAL',diagExpiry:'23/05/2026',regExpiry:'01/07/2026'},
+{id:'1114',originId:'594731WW',model:'RENAULT EXPRESS VAN',fn:'CAS FUR',currentKm:7710,lastCheck:'28/05/2026',lastOilKm:29980,fuelCard:'497995',pin:'37840',tyreRef:'185/65R15 T',tyreBrand:'CONTINENTAL',diagExpiry:'12/05/2027',regExpiry:'01/07/2026'},
+{id:'1115',originId:'594735WW',model:'RENAULT EXPRESS VAN',fn:'FF',currentKm:3722,lastCheck:'25/05/2026',lastOilKm:34551,fuelCard:'497991',pin:'40385',tyreRef:'185/65R15 T',tyreBrand:'CONTINENTAL',diagExpiry:'15/05/2027',regExpiry:'01/07/2026'},
+{id:'1116',originId:'594733WW',model:'RENAULT EXPRESS VAN',fn:'CAS FUR',currentKm:7160,lastCheck:'26/05/2026',lastOilKm:20350,fuelCard:'497993',pin:'24954',tyreRef:'185/65R15 T',tyreBrand:'CONTINENTAL',diagExpiry:'07/05/2027',regExpiry:'01/07/2026'},
+{id:'1117',originId:'594715WW',model:'RENAULT EXPRESS VAN',fn:'CAS FUR',currentKm:3604,lastCheck:'26/05/2026',lastOilKm:29212,fuelCard:'498012',pin:'35985',tyreRef:'185/65R15 T',tyreBrand:'CONTINENTAL',diagExpiry:'12/05/2027',regExpiry:'01/07/2026'},
+{id:'1119',originId:'594717WW',model:'RENAULT EXPRESS VAN',fn:'EXTRA CU',currentKm:4397,lastCheck:'26/05/2026',lastOilKm:40073,fuelCard:'498010',pin:'43432',tyreRef:'185/65R15 T',tyreBrand:'CONTINENTAL',diagExpiry:'09/05/2027',regExpiry:'01/07/2026'},
+{id:'1120',originId:'594736WW',model:'RENAULT EXPRESS VAN',fn:'EXTRA CU',currentKm:4794,lastCheck:'26/05/2026',lastOilKm:30207,fuelCard:'497990',pin:'34854',tyreRef:'185/65R15 T',tyreBrand:'CONTINENTAL',diagExpiry:'07/05/2027',regExpiry:'01/07/2026'},
+{id:'1121',originId:'594734WW',model:'RENAULT EXPRESS VAN',fn:'RBA KIT',currentKm:4785,lastCheck:'25/05/2026',lastOilKm:29435,fuelCard:'497992',pin:'41948',tyreRef:'185/65R15 T',tyreBrand:'CONTINENTAL',diagExpiry:'23/05/2026',regExpiry:'01/07/2026'},
+{id:'1122',originId:'594713WW',model:'RENAULT EXPRESS VAN',fn:'CAS FUR',currentKm:5055,lastCheck:'26/05/2026',lastOilKm:30167,fuelCard:'498014',pin:'36037',tyreRef:'185/65R15 T',tyreBrand:'CONTINENTAL',diagExpiry:'08/05/2027',regExpiry:'01/07/2026'},
+{id:'4840',originId:'520221WW',model:'MITSUBISHI FUSO',fn:'MKS TRS',currentKm:1099,lastCheck:'28/05/2026',lastOilKm:72145,fuelCard:'501198',pin:'78718',tyreRef:'205/75R16 C',tyreBrand:'CONTINENTAL',diagExpiry:'25/07/2026',regExpiry:''},
+{id:'4842',originId:'520222WW',model:'MITSUBISHI FUSO',fn:'RAK TRS',currentKm:4418,lastCheck:'25/05/2026',lastOilKm:84703,fuelCard:'501199',pin:'92740',tyreRef:'205/75R16 C',tyreBrand:'CONTINENTAL',diagExpiry:'26/07/2026',regExpiry:''},
+{id:'5586',originId:'520223WW',model:'MITSUBISHI FUSO',fn:'RBA TRS',currentKm:9133,lastCheck:'28/05/2026',lastOilKm:85919,fuelCard:'501197',pin:'90856',tyreRef:'205/75R16 C',tyreBrand:'CONTINENTAL',diagExpiry:'03/08/2026',regExpiry:''},
+{id:'6806',originId:'921',model:'RENAULT MASTER (replacement)',fn:'CAB FUR',currentKm:null,lastCheck:'26/05/2026',lastOilKm:22838,fuelCard:'504979',pin:'33693',tyreRef:'',tyreBrand:'',diagExpiry:'03/07/2026',regExpiry:''},
+{id:'8500',originId:'594738WW',model:'RENAULT TRAFFIC VAN',fn:'RBA FUR',currentKm:2592,lastCheck:'28/05/2026',lastOilKm:45657,fuelCard:'505034',pin:'54949',tyreRef:'205/65R16 C',tyreBrand:'BRIDGESTONE',diagExpiry:'11/05/2027',regExpiry:'01/07/2026'},
+{id:'59711',originId:'59711-T-6',model:'RENAULT CLIO',fn:'FINANCE',currentKm:8766,lastCheck:'26/05/2026',lastOilKm:10966,fuelCard:'498005',pin:'56478',tyreRef:'185/65R15 H',tyreBrand:'CONTINENTAL',diagExpiry:'15/05/2027',regExpiry:'01/07/2026'},
+{id:'72289',originId:'72289-T-6',model:'RENAULT EXPRESS',fn:'CAB KIT',currentKm:7445,lastCheck:'26/05/2026',lastOilKm:21028,fuelCard:'497989',pin:'32033',tyreRef:'185/65R15 T',tyreBrand:'GITISYNERGY',diagExpiry:'24/05/2026',regExpiry:'01/07/2026'},
+{id:'72482',originId:'72482-T-6',model:'RENAULT EXPRESS',fn:'RBA KIT',currentKm:8014,lastCheck:'25/05/2026',lastOilKm:31684,fuelCard:'497988',pin:'41049',tyreRef:'185/65R15 T',tyreBrand:'GITISYNERGY',diagExpiry:'14/05/2027',regExpiry:'01/07/2026'},
+{id:'73320',originId:'73320-T-6',model:'RENAULT EXPRESS',fn:'CAS KIT',currentKm:5082,lastCheck:'28/05/2026',lastOilKm:30700,fuelCard:'504504',pin:'43609',tyreRef:'185/65R15 T',tyreBrand:'GITISYNERGY',diagExpiry:'10/05/2027',regExpiry:'01/07/2026'},
+{id:'90299',originId:'90299-E-6',model:'IVECO TRAILER',fn:'CAS TRS',currentKm:3245,lastCheck:'26/05/2026',lastOilKm:535555,fuelCard:'471680',pin:'550172',tyreRef:'295/80R22,5',tyreBrand:'CONTINENTAL',diagExpiry:'23/01/2027',regExpiry:''},
+{id:'95587',originId:'95587-E-6',model:'IVECO TRAILER',fn:'CAB TRS',currentKm:2552,lastCheck:'26/05/2026',lastOilKm:516138,fuelCard:'471678',pin:'529422',tyreRef:'295/80R22,5',tyreBrand:'CONTINENTAL',diagExpiry:'30/04/2027',regExpiry:''},
+{id:'58204',originId:'935',model:'PEUGEOT BOXER (replacement)',fn:'CAS FUR',currentKm:null,lastCheck:'28/04/2026',lastOilKm:15000,fuelCard:'504982',pin:'59636',tyreRef:'',tyreBrand:'',diagExpiry:'11/10/2026',regExpiry:''},
+];
 
-let allVehicles = [];
+const OIL_INTERVAL = 15000;
+const TODAY = new Date('2026-05-28');
 
-async function loadData() {
-  const status = document.getElementById('status');
-  try {
-    const response = await fetch(CSV_URL);
-    const csvText = await response.text();
-    const rows = csvText.trim().split('\n').map(row => row.split(',').map(c => c.replace(/^"|"$/g, '').trim()));
-
-    allVehicles = [];
-    rows.slice(1).forEach(row => {
-      if (row.length < 20) return;
-      allVehicles.push({
-        vehicleID: row[0] || '',
-        branding: row[2] || '',
-        model: row[4] || '',
-        zone: row[9] || '',                    // Assuming column for Zone (you can adjust)
-        nextOilChange: row[19] || '',
-        annualDiagnostic: row[20] || '',
-        registrationExpiry: row[27] || '',
-        insuranceExpiry: row[26] || '',
-        mileage: row[15] || '',
-        owner: row[8] || '',
-        gps: row[10] || '',
-        oilAlert: row[28] || ''
-      });
-    });
-
-    renderDashboard(allVehicles);
-    populateZoneFilter();
-    status.className = "alert alert-success";
-    status.textContent = `✅ Loaded ${allVehicles.length} vehicles`;
-  } catch (e) {
-    status.className = "alert alert-danger";
-    status.textContent = "Failed to load data";
-  }
+function parseDate(str){
+  if(!str) return null;
+  const p=str.split('/');
+  if(p.length===3) return new Date(parseInt(p[2]),parseInt(p[1])-1,parseInt(p[0]));
+  return null;
+}
+function daysUntil(dateStr){
+  const d=parseDate(dateStr);
+  if(!d) return null;
+  return Math.round((d-TODAY)/(1000*60*60*24));
+}
+function oilKmRemaining(v){
+  if(v.currentKm===null||v.lastOilKm===null) return null;
+  return (v.lastOilKm+OIL_INTERVAL)-v.currentKm;
+}
+function oilStatus(v){
+  const r=oilKmRemaining(v);
+  if(r===null) return {label:'No data',cls:'badge-gray',cat:'nodata'};
+  if(r<=0) return {label:'OVERDUE',cls:'badge-danger',cat:'overdue'};
+  if(r<=2000) return {label:'CRITICAL',cls:'badge-danger',cat:'critical'};
+  if(r<=5000) return {label:'DUE SOON',cls:'badge-warn',cat:'soon'};
+  return {label:'OK',cls:'badge-ok',cat:'ok'};
+}
+function diagStatus(v){
+  const days=daysUntil(v.diagExpiry);
+  if(days===null) return {label:'No data',cls:'badge-gray',cat:'nodata'};
+  if(days<0) return {label:'OVERDUE',cls:'badge-danger',cat:'overdue'};
+  if(days<=30) return {label:`${days}d left`,cls:'badge-danger',cat:'month1'};
+  if(days<=90) return {label:`${days}d left`,cls:'badge-warn',cat:'month3'};
+  return {label:`${days}d left`,cls:'badge-ok',cat:'ok'};
 }
 
-function populateZoneFilter() {
-  const zones = [...new Set(allVehicles.map(v => v.zone).filter(z => z))];
-  const select = document.getElementById('zoneFilter');
-  select.innerHTML = '<option value="">All Zones</option>';
-  zones.forEach(zone => {
-    const opt = document.createElement('option');
-    opt.value = zone;
-    opt.textContent = zone;
-    select.appendChild(opt);
+// ---- KPI ----
+function buildKPI(){
+  let overdue=0,critical=0,soon=0,ok=0,diagOver=0,diagSoon=0;
+  vehicles.forEach(v=>{
+    const os=oilStatus(v).cat;
+    if(os==='overdue') overdue++;
+    else if(os==='critical') critical++;
+    else if(os==='soon') soon++;
+    else ok++;
+    const ds=diagStatus(v).cat;
+    if(ds==='overdue'||ds==='month1') diagOver++;
+    else if(ds==='month3') diagSoon++;
   });
+  const total=vehicles.length;
+  document.getElementById('kpiRow').innerHTML=`
+    <div class="kpi" style="--accent:var(--blue)"><div class="kpi-label">🚐 Total vehicles</div><div class="kpi-val">${total}</div><div class="kpi-sub">Active fleet</div></div>
+    <div class="kpi" style="--accent:var(--danger)"><div class="kpi-label">🔴 Oil overdue</div><div class="kpi-val" style="color:var(--danger)">${overdue}</div><div class="kpi-sub">Past next service km</div></div>
+    <div class="kpi" style="--accent:var(--warn)"><div class="kpi-label">🟠 Oil critical</div><div class="kpi-val" style="color:var(--warn)">${critical}</div><div class="kpi-sub">Under 2,000 km left</div></div>
+    <div class="kpi" style="--accent:#f9a825"><div class="kpi-label">🟡 Oil due soon</div><div class="kpi-val" style="color:#b37d00">${soon}</div><div class="kpi-sub">Under 5,000 km left</div></div>
+    <div class="kpi" style="--accent:var(--ok)"><div class="kpi-label">🟢 Oil OK</div><div class="kpi-val" style="color:var(--ok)">${ok}</div><div class="kpi-sub">No action needed</div></div>
+    <div class="kpi" style="--accent:var(--danger)"><div class="kpi-label">📅 Diag urgent</div><div class="kpi-val" style="color:var(--danger)">${diagOver}</div><div class="kpi-sub">Overdue or &lt;30 days</div></div>
+  `;
+  // Alerts
+  const overdueList=vehicles.filter(v=>oilStatus(v).cat==='overdue');
+  const diagList=vehicles.filter(v=>['overdue','month1'].includes(diagStatus(v).cat));
+  let html='';
+  if(overdueList.length) html+=`<div class="alert">⚠️ <div><b>${overdueList.length} vehicle(s) overdue for oil change:</b> ${overdueList.map(v=>`#${v.id} ${v.fn}`).join(', ')}</div></div>`;
+  if(diagList.length) html+=`<div class="alert">📅 <div><b>${diagList.length} vehicle(s) with urgent annual diagnostic:</b> ${diagList.map(v=>`#${v.id} (${v.diagExpiry})`).join(', ')}</div></div>`;
+  document.getElementById('alertBanner').innerHTML=html;
 }
 
-function renderDashboard(vehicles) {
-  document.getElementById('total').textContent = vehicles.length;
+// ---- DONUT ----
+function buildTypeChart(){
+  const counts={};
+  vehicles.forEach(v=>{
+    const k=v.model.replace(' VAN','').replace('RENAULT ','R. ').replace('MITSUBISHI ','M. ');
+    counts[k]=(counts[k]||0)+1;
+  });
+  const sorted=Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+  const colors=['#0058a3','#ffdb00','#2e7d32','#bf360c','#6a1b9a','#aaa','#00838f','#558b2f'];
+  new Chart(document.getElementById('typeChart'),{
+    type:'doughnut',
+    data:{labels:sorted.map(e=>e[0]),datasets:[{data:sorted.map(e=>e[1]),backgroundColor:colors,borderWidth:2,borderColor:'#fff'}]},
+    options:{responsive:false,plugins:{legend:{display:false}},cutout:'60%'}
+  });
+  document.getElementById('typeLegend').innerHTML=sorted.map((e,i)=>`
+    <div class="legend-row"><div class="legend-sq" style="background:${colors[i]||'#aaa'}"></div>${e[0]} (${e[1]})</div>`).join('');
+}
 
-  let oilDue = 0, techDue = 0, totalAlerts = 0;
-  const tbody = document.querySelector("#vehicleTable tbody");
-  tbody.innerHTML = "";
+// ---- ZONE BARS ----
+function buildZoneBars(){
+  const counts={};
+  vehicles.forEach(v=>{
+    const z=v.fn.split(' ')[0];
+    counts[z]=(counts[z]||0)+1;
+  });
+  const sorted=Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const max=sorted[0][1];
+  document.getElementById('zoneBars').innerHTML=sorted.map(([z,n])=>`
+    <div class="bar-row">
+      <div class="bar-label">${z}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${Math.round(n/max*100)}%;background:var(--blue)"></div></div>
+      <div class="bar-val">${n}</div>
+    </div>`).join('');
+}
 
-  vehicles.forEach(v => {
-    const oilFlag = isDueSoon(v.nextOilChange) ? `<span class="flag-oil">Oil Change</span>` : '';
-    const techFlag = isDueSoon(v.annualDiagnostic) ? `<span class="flag-tech">Tech Control</span>` : '';
-    const hasAlert = oilFlag || techFlag;
+// ---- TOP 10 OIL URGENT ----
+function buildOilUrgent(){
+  const sorted=[...vehicles]
+    .filter(v=>v.currentKm!==null)
+    .map(v=>({...v,rem:oilKmRemaining(v)}))
+    .sort((a,b)=>a.rem-b.rem)
+    .slice(0,10);
+  document.getElementById('oilUrgent').innerHTML=sorted.map(v=>{
+    const s=oilStatus(v);
+    return `<div class="maint-item">
+      <span class="badge ${s.cls}">${s.label}</span>
+      <div class="maint-info">
+        <div class="maint-veh">#${v.id} — ${v.model}</div>
+        <div class="maint-meta"><span class="pill">${v.fn}</span> · Last oil at ${v.lastOilKm.toLocaleString()} km · Next at ${(v.lastOilKm+OIL_INTERVAL).toLocaleString()} km</div>
+      </div>
+      <div class="maint-right">
+        <div class="maint-km">${v.rem!==null?(v.rem<=0?Math.abs(v.rem).toLocaleString()+' km overdue':v.rem.toLocaleString()+' km left'):'—'}</div>
+        <div class="maint-sub">Current: ${v.currentKm.toLocaleString()} km</div>
+      </div>
+    </div>`;
+  }).join('');
+}
 
-    if (isDueSoon(v.nextOilChange)) oilDue++;
-    if (isDueSoon(v.annualDiagnostic)) techDue++;
-    if (hasAlert) totalAlerts++;
-
-    const row = document.createElement('tr');
-    if (hasAlert) row.classList.add('alert-row');
-
-    row.innerHTML = `
-      <td><strong>${v.vehicleID}</strong></td>
-      <td>${v.branding}</td>
+// ---- OIL TABLE ----
+let oilFilter='all';
+function filterOil(f,el){
+  oilFilter=f;
+  document.querySelectorAll('#oilFilters .fbtn').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  renderOilTable();
+}
+function renderOilTable(){
+  const q=(document.getElementById('oilSearch').value||'').toLowerCase();
+  let rows=vehicles.filter(v=>{
+    const s=oilStatus(v);
+    if(oilFilter!=='all'&&s.cat!==oilFilter) return false;
+    if(q&&!`${v.id} ${v.model} ${v.fn} ${v.originId}`.toLowerCase().includes(q)) return false;
+    return true;
+  }).sort((a,b)=>(oilKmRemaining(a)||9e9)-(oilKmRemaining(b)||9e9));
+  document.getElementById('oilCount').textContent=`${rows.length} vehicle(s)`;
+  document.getElementById('oilTbody').innerHTML=rows.map(v=>{
+    const s=oilStatus(v);
+    const rem=oilKmRemaining(v);
+    return `<tr>
+      <td><strong>${v.id}</strong><br><span style="font-size:10px;color:var(--text3)">${v.originId}</span></td>
       <td>${v.model}</td>
-      <td>${v.zone}</td>
-      <td>${oilFlag} ${techFlag}</td>
-      <td>${v.nextOilChange}</td>
-      <td>${v.annualDiagnostic}</td>
-      <td>${v.registrationExpiry}</td>
-      <td>${v.insuranceExpiry}</td>
-      <td>${v.mileage}</td>
-      <td>${v.owner}</td>
-      <td>${v.gps}</td>
-    `;
-    tbody.appendChild(row);
+      <td><span class="pill">${v.fn}</span></td>
+      <td>${v.currentKm!==null?v.currentKm.toLocaleString()+' km':'—'}</td>
+      <td>${v.lastOilKm.toLocaleString()+' km'}</td>
+      <td>${(v.lastOilKm+OIL_INTERVAL).toLocaleString()+' km'}</td>
+      <td style="font-weight:600;color:${rem!==null&&rem<=0?'var(--danger)':rem!==null&&rem<=2000?'var(--warn)':'var(--text)'}">${rem!==null?(rem<=0?'⚠ +'+Math.abs(rem).toLocaleString():rem.toLocaleString()+' km'):'—'}</td>
+      <td><span class="badge ${s.cls}">${s.label}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+// ---- FLEET TABLE ----
+let fleetFilter='all';
+function filterFleet(f,el){
+  fleetFilter=f;
+  document.querySelectorAll('#fleetFilters .fbtn').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  renderFleetTable();
+}
+function renderFleetTable(){
+  const q=(document.getElementById('fleetSearch').value||'').toLowerCase();
+  let rows=vehicles.filter(v=>{
+    if(fleetFilter!=='all'&&!v.fn.includes(fleetFilter)) return false;
+    if(q&&!`${v.id} ${v.model} ${v.fn} ${v.originId}`.toLowerCase().includes(q)) return false;
+    return true;
   });
-
-  document.getElementById('oilDue').textContent = oilDue;
-  document.getElementById('techDue').textContent = techDue;
-  document.getElementById('alerts').textContent = totalAlerts;
+  document.getElementById('fleetCount').textContent=`${rows.length} vehicle(s)`;
+  const os=v=>oilStatus(v);
+  document.getElementById('fleetTbody').innerHTML=rows.map(v=>{
+    const s=os(v);
+    const ds=diagStatus(v);
+    return `<tr>
+      <td><strong>${v.id}</strong><br><span style="font-size:10px;color:var(--text3)">${v.originId}</span></td>
+      <td style="white-space:nowrap">${v.model}</td>
+      <td><span class="pill">${v.fn}</span></td>
+      <td style="font-size:11px;color:var(--text3)">${v.originId}</td>
+      <td>${v.currentKm!==null?v.currentKm.toLocaleString()+' km':'—'}</td>
+      <td style="font-size:11px">${v.lastCheck}</td>
+      <td style="font-family:monospace;font-size:12px">${v.fuelCard}</td>
+      <td style="font-family:monospace;font-size:12px;font-weight:600">${v.pin}</td>
+      <td style="font-size:11px">${v.tyreRef}<br><span style="color:var(--text3)">${v.tyreBrand}</span></td>
+      <td><span class="badge ${s.cls}">${s.label}</span></td>
+      <td><span class="badge ${ds.cls}">${v.diagExpiry||'—'}</span></td>
+    </tr>`;
+  }).join('');
 }
 
-function isDueSoon(dateStr) {
-  if (!dateStr) return false;
-  const due = new Date(dateStr);
-  const today = new Date();
-  const diff = (due - today) / (1000 * 3600 * 24);
-  return diff <= 45 && diff >= -5;
+// ---- DIAG TABLE ----
+let diagFilter='all';
+function filterDiag(f,el){
+  diagFilter=f;
+  document.querySelectorAll('#diagFilters .fbtn').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  renderDiagTable();
+}
+function renderDiagTable(){
+  let rows=vehicles
+    .filter(v=>{
+      const s=diagStatus(v);
+      if(diagFilter!=='all'&&s.cat!==diagFilter) return false;
+      return true;
+    })
+    .sort((a,b)=>{
+      const da=daysUntil(a.diagExpiry)||9999;
+      const db=daysUntil(b.diagExpiry)||9999;
+      return da-db;
+    });
+  document.getElementById('diagTbody').innerHTML=rows.map(v=>{
+    const s=diagStatus(v);
+    const days=daysUntil(v.diagExpiry);
+    return `<tr>
+      <td><strong>${v.id}</strong><br><span style="font-size:10px;color:var(--text3)">${v.originId}</span></td>
+      <td>${v.model}</td>
+      <td><span class="pill">${v.fn}</span></td>
+      <td style="font-weight:500">${v.diagExpiry||'—'}</td>
+      <td style="font-weight:600;color:${days!==null&&days<0?'var(--danger)':days!==null&&days<=30?'var(--warn)':'var(--text)'}">${days!==null?(days<0?'⚠ '+Math.abs(days)+'d overdue':days+'d'):' —'}</td>
+      <td><span class="badge ${s.cls}">${s.label}</span></td>
+    </tr>`;
+  }).join('');
 }
 
-function filterTable() {
-  const searchTerm = document.getElementById('searchInput').value.toUpperCase();
-  const selectedZone = document.getElementById('zoneFilter').value;
-
-  const filtered = allVehicles.filter(v => {
-    const matchSearch = !searchTerm || 
-      (v.vehicleID + v.branding + v.model + v.zone).toUpperCase().includes(searchTerm);
-    const matchZone = !selectedZone || v.zone === selectedZone;
-    return matchSearch && matchZone;
-  });
-
-  renderDashboard(filtered);
+// ---- PAGE NAV ----
+function showPage(name,el){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  el.classList.add('active');
 }
 
-// Initial load
-loadData();
-setInterval(loadData, 180000);
+// ---- CLOCK ----
+function updateClock(){
+  const now=new Date();
+  document.getElementById('clockDate').textContent=now.toLocaleDateString('fr-MA',{weekday:'short',day:'2-digit',month:'short',year:'numeric'});
+  document.getElementById('clockTime').textContent=now.toLocaleTimeString('fr-MA',{hour:'2-digit',minute:'2-digit'});
+}
+setInterval(updateClock,1000);
+updateClock();
+
+// ---- INIT ----
+buildKPI();
+buildTypeChart();
+buildZoneBars();
+buildOilUrgent();
+renderOilTable();
+renderFleetTable();
+renderDiagTable();
 </script>
 </body>
 </html>

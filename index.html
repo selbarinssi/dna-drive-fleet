@@ -264,7 +264,7 @@ select.form-input{cursor:pointer}
     <button class="fbtn" onclick="filterOil('ok',this)">🟢 OK</button>
   </div>
   <div class="row-tools">
-    <input class="srch" type="text" id="oilSearch" placeholder="Search ID, model, zone…" oninput="renderOil()">
+    <input class="srch" type="text" id="oilSearch" placeholder="Filter by vehicle ID or zone…" oninput="renderOil()">
     <span class="count-lbl" id="oilCount"></span>
   </div>
   <div class="tbl-wrap">
@@ -294,7 +294,7 @@ select.form-input{cursor:pointer}
   </div>
   <div class="row-tools">
     <button class="btn btn-primary" onclick="openAddModal()">+ Add vehicle</button>
-    <input class="srch" type="text" id="fleetSearch" placeholder="Search ID, model, chassis…" oninput="renderFleet()">
+    <input class="srch" type="text" id="fleetSearch" placeholder="Filter by vehicle ID or zone…" oninput="renderFleet()">
     <span class="count-lbl" id="fleetCount"></span>
   </div>
   <div class="tbl-wrap">
@@ -343,7 +343,7 @@ select.form-input{cursor:pointer}
   </div>
   <div class="row-tools">
     <button class="btn btn-primary" onclick="openScheduleModal()">+ Plan intervention</button>
-    <input class="srch" type="text" id="schedSearch" placeholder="Search vehicle, mechanic, notes…" oninput="renderSchedule()">
+    <input class="srch" type="text" id="schedSearch" placeholder="Filter by vehicle ID or zone…" oninput="renderSchedule()">
     <span class="count-lbl" id="schedCount"></span>
   </div>
   <div class="tbl-wrap">
@@ -419,7 +419,7 @@ select.form-input{cursor:pointer}
         </div>
         <div class="form-field">
           <label class="form-label">Notes (optional)</label>
-          <input class="form-input" id="oil-note" placeholder="e.g. Filter also replaced">
+          <input class="form-input" id="oil-note" placeholder="Filter by vehicle ID or zone…">
         </div>
       </div>
     </div>
@@ -471,6 +471,10 @@ select.form-input{cursor:pointer}
         <div class="form-field">
           <label class="form-label">Vehicle ID</label>
           <input class="form-input" id="sc-id" placeholder="e.g. V-042">
+        </div>
+        <div class="form-field">
+          <label class="form-label">KM at service</label>
+          <input class="form-input" type="number" id="sf-km" placeholder="Current km (optional)">
         </div>
         <div class="form-field">
           <label class="form-label">Type</label>
@@ -800,7 +804,7 @@ function renderOil(){
   const q=(document.getElementById('oilSearch').value||'').toLowerCase();
   const rows=vehicles.filter(v=>{
     if(oilFilter!=='all'&&oilStatus(v).cat!==oilFilter) return false;
-    if(q&&!`${v.id} ${v.originId} ${v.model} ${v.fn}`.toLowerCase().includes(q)) return false;
+    if(q && !`${v.id} ${v.fn}`.toLowerCase().includes(q)) return false;
     return true;
   }).sort((a,b)=>(oilRemaining(a)??9e9)-(oilRemaining(b)??9e9));
   document.getElementById('oilCount').textContent=rows.length+' vehicle(s)';
@@ -827,7 +831,7 @@ function renderFleet(){
   const q=(document.getElementById('fleetSearch').value||'').toLowerCase();
   const rows=vehicles.filter(v=>{
     if(fleetFilter!=='all'&&!v.fn.includes(fleetFilter)) return false;
-    if(q&&!`${v.id} ${v.originId} ${v.model} ${v.fn} ${v.chassis}`.toLowerCase().includes(q)) return false;
+    if(q && !`${v.id} ${v.fn}`.toLowerCase().includes(q)) return false;
     return true;
   });
   document.getElementById('fleetCount').textContent=rows.length+' vehicle(s)';
@@ -857,7 +861,7 @@ function renderFleet(){
 function filterDiag(f,el){ diagFilter=f; document.querySelectorAll('#diagFilters .fbtn').forEach(b=>b.classList.remove('active')); el.classList.add('active'); renderDiag(); }
 function renderDiag(){
   const rows=vehicles.filter(v=>{
-    if(diagFilter!=='all'&&diagStatus(v).cat!==diagFilter) return false;
+    if(q && !`${v.id} ${v.fn}`.toLowerCase().includes(q)) return false;
     return true;
   }).sort((a,b)=>(daysUntil(a.diagExpiry)??9999)-(daysUntil(b.diagExpiry)??9999));
   document.getElementById('diagTbody').innerHTML=rows.map(v=>{
@@ -890,7 +894,7 @@ function renderSchedule(){
   const q = (document.getElementById('schedSearch').value || '').toLowerCase();
   const rows = [...maintenance].reverse().filter(l => {
     if(schedFilter !== 'all' && l['Type'] !== schedFilter) return false;
-    if(q && !`${l['Vehicle ID']} ${l['User']} ${l['Notes']} ${l['Type']}`.toLowerCase().includes(q)) return false;
+    if(q && !`${l['Vehicle ID']}`.toLowerCase().includes(q)) return false;
     return true;
   });
   document.getElementById('schedCount').textContent = rows.length + ' entries';
@@ -909,7 +913,10 @@ function renderSchedule(){
     const isDone = status === 'Done';
     return `<tr style="${isDone ? 'opacity:0.6' : ''}">
       <td style="font-size:11px;color:var(--t3);white-space:nowrap">${l['Timestamp'] || '—'}</td>
-      <td><strong>${l['Vehicle ID'] || '—'}</strong></td>
+      <td>
+        <strong>${l['Vehicle ID'] || '—'}</strong>
+        ${(()=>{ const v = vehicles.find(x => x.id === l['Vehicle ID']); return v ? `<span style="font-size:11px;color:var(--t3);margin-left:4px">${v.model}</span>` : ''; })()}
+      </td>
       <td><span class="badge ${badge}">${type}</span></td>
       <td class="mono" style="font-size:11px">${l['KM at service'] || '—'}</td>
       <td style="font-size:11px">${l['User'] || '—'}</td>
@@ -1075,22 +1082,24 @@ async function saveDiag(){
 
 function openScheduleModal(){ openModal('schedOverlay'); }
 async function saveSchedule(){
-  const id=document.getElementById('sc-id').value.trim();
+  const id = document.getElementById('sc-id').value.trim();
   if(!id){ toast('Enter a vehicle ID','err'); return; }
-  const rawDate=document.getElementById('sc-date').value;
-  const fmtDate=rawDate?rawDate.split('-').reverse().join('/'):'';
+  const rawDate = document.getElementById('sc-date').value;
+  const fmtDate = rawDate ? rawDate.split('-').reverse().join('/') : '';
   await postAction({
-    action:'logMaintenance',
-    vehicleId:id,
-    type:document.getElementById('sc-type').value,
-    scheduledDate:fmtDate,
-    mechanic:document.getElementById('sc-mech').value,
-    note:document.getElementById('sc-note').value,
-    user:getUser()
+    action:       'logMaintenance',
+    vehicleId:    id,
+    type:         document.getElementById('sc-type').value,
+    scheduledDate: fmtDate,
+    mechanic:     document.getElementById('sc-mech').value,
+    note:         document.getElementById('sc-note').value,
+    user:         getUser(),
+    km:           document.getElementById('sf-km').value ? Number(document.getElementById('sf-km').value) : ''
   });
+  document.getElementById('sf-km').value = '';
   closeModal('schedOverlay');
   await fetchData(false);
-  toast('Maintenance scheduled for #'+id,'ok');
+  toast('Intervention scheduled','ok');
 }
 
 // ---- POST ----

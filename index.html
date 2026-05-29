@@ -921,11 +921,12 @@ function renderSchedule(){
       <td><span class="badge ${badge}">${type}</span></td>
       <td class="mono" style="font-size:11px">${l['KM at service'] || '—'}</td>
       <td style="font-size:11px">${l['User'] || '—'}</td>
-      <td style="font-size:11px;color:var(--t2)">${l['Notes'] || ''}</td>
+      <td contenteditable="true" onblur="updateNoteColumn(${l._row}, this.innerText)">${l['Notes'] || ''}</td>
       <td>
         ${isDone
           ? '<span class="badge b-ok">✓ Done</span>'
-          : `<button class="act-btn oil" onclick="markDone(${l._row})">Mark done</button>`
+          : `<button class="act-btn oil" onclick="markDone(${l._row})">Mark done</button>
+             <button class="act-btn" style="border-color:var(--danger-bd); color:var(--danger);" onclick="deleteSchedule(${l._row})">🗑 Delete</button>`
         }
       </td>
     </tr>`;
@@ -937,7 +938,33 @@ async function markDone(row){
   await fetchData(false);
   toast('Marked as done', 'ok');
 }
-
+async function deleteSchedule(row) {
+  if (!confirm("Are you sure you want to delete this scheduled intervention?")) return;
+  
+  setSyncState('stale', 'Deleting row...');
+  const res = await postAction({ action: 'deleteMaintenanceRow', row: row, user: getUser() });
+  
+  if (res && res.ok) {
+    toast('Intervention deleted successfully', 'ok');
+    await fetchData(false); // Force a clean reload from the sheet immediately
+  } else {
+    toast('Failed to delete row', 'err');
+    setSyncState('ok', 'Synced');
+  }
+}
+async function updateNoteColumn(row, newText) {
+  setSyncState('stale', 'Updating cell...');
+  // Sends the single modified cell directly to your Google Apps Script
+  const res = await postAction({ action: 'updateMaintenanceCell', row: row, column: 6, value: newText, user: getUser() });
+  
+  if (res && res.ok) {
+    toast('Cell updated', 'ok');
+    await fetchData(false);
+  } else {
+    toast('Failed to update', 'err');
+    setSyncState('ok', 'Synced');
+  }
+}
 
 // ---- MODALS ----
 function openModal(id){ document.getElementById(id).classList.add('open'); }

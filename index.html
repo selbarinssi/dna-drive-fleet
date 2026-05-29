@@ -507,7 +507,17 @@ select.form-input{cursor:pointer}
     </div>
   </div>
 </div>
-
+<div id="authOverlay" class="overlay" style="display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.6); position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 9999;">
+  <div style="background: var(--white); padding: 30px; border-radius: 12px; width: 100%; max-width: 400px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); text-align: center;">
+    <h3 style="margin-bottom: 10px; color: var(--blue);">D&A Drive Access</h3>
+    <p style="color: var(--t2); font-size: 14px; margin-bottom: 20px;">Please authenticate to modify fleet configurations or continue as a viewer.</p>
+    
+    <input type="password" id="authPasswordInput" placeholder="Enter Admin Password" style="width: 100%; padding: 12px; border: 1px solid var(--bd); border-radius: 6px; margin-bottom: 15px; font-size: 14px; text-align: center;">
+    
+    <button onclick="submitAdminPassword()" style="width: 100%; background: var(--blue); color: var(--white); padding: 12px; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; margin-bottom: 10px;">🔓 Login as Admin</button>
+    <button onclick="continueAsGuest()" style="width: 100%; background: transparent; color: var(--t2); padding: 10px; border: 1px solid var(--bd); border-radius: 6px; cursor: pointer;">👁 View as Guest</button>
+  </div>
+</div>
 <!-- USER MODAL -->
 <div class="overlay" id="userOverlay">
   <div class="modal" style="width:340px">
@@ -571,7 +581,37 @@ select.form-input{cursor:pointer}
 // ================================================================
 const API_URL = 'https://script.google.com/macros/s/AKfycbwf56LwScE6MpM6R791gJ9DTPwveaQUOhqdUkRAg7VqajOlOcJLgiPZmNY0ctHgAhlHRQ/exec';
 // ================================================================
+// Automatically execute check when dashboard initializes
+document.addEventListener("DOMContentLoaded", () => {
+  const currentAuth = sessionStorage.getItem('dash_pass');
+  
+  // If they already decided their role in this session, hide the prompt overlay entirely
+  if (currentAuth === 'VIEWER_MODE' || (currentAuth && currentAuth !== '')) {
+    document.getElementById('authOverlay').style.display = 'none';
+  }
+});
 
+// Action when clicking "Login as Admin"
+function submitAdminPassword() {
+  const enteredPass = document.getElementById('authPasswordInput').value;
+  if (!enteredPass) {
+    toast('Please enter a password', 'err');
+    return;
+  }
+  // Store whatever they typed into local session memory and close modal
+  sessionStorage.setItem('dash_pass', enteredPass);
+  document.getElementById('authOverlay').style.display = 'none';
+  toast('Admin session initialized', 'ok');
+}
+
+// Action when clicking "View as Guest"
+function continueAsGuest() {
+  // Flag this browser tab explicitly as a Guest
+  sessionStorage.setItem('dash_pass', 'VIEWER_MODE');
+  document.getElementById('authOverlay').style.display = 'none';
+  toast('Viewing dashboard as Guest', 'info');
+}
+// ================================================================
 const OIL_INTERVAL = 15000;
 const TODAY = new Date();
 
@@ -1144,6 +1184,10 @@ async function saveSchedule(){
 async function postAction(payload) {
   try {
     const action = payload.action;
+    
+    // ATTACH THE BACKEND PASSWORD HERE AUTOMATICALLY
+    payload.password = sessionStorage.getItem('dash_pass') || ''; 
+    
     const data = encodeURIComponent(JSON.stringify(payload));
     const res = await fetch(
       API_URL + '?action=' + action + '&payload=' + data + '&t=' + Date.now(),
@@ -1151,6 +1195,12 @@ async function postAction(payload) {
     );
     const text = await res.text();
     const json = JSON.parse(text);
+    
+    // If the backend rejects due to a wrong password, clear it so they can retry on refresh
+    if (!json.ok && json.error.includes('Unauthorized')) {
+      sessionStorage.removeItem('dash_pass');
+    }
+    
     if (!json.ok) toast('Error: ' + (json.error || 'Unknown'), 'err');
     return json;
   } catch(e) {

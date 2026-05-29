@@ -860,6 +860,7 @@ function renderFleet(){
 // ---- DIAG TABLE ----
 function filterDiag(f,el){ diagFilter=f; document.querySelectorAll('#diagFilters .fbtn').forEach(b=>b.classList.remove('active')); el.classList.add('active'); renderDiag(); }
 function renderDiag(){
+  const q=(document.getElementById('oilSearch').value||'').toLowerCase(); // Or create a dedicated diag search input element
   const rows=vehicles.filter(v=>{
     if(q && !`${v.id} ${v.fn}`.toLowerCase().includes(q)) return false;
     return true;

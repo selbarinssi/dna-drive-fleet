@@ -900,9 +900,16 @@ function renderFleet(){
 // ---- DIAG TABLE ----
 function filterDiag(f,el){ diagFilter=f; document.querySelectorAll('#diagFilters .fbtn').forEach(b=>b.classList.remove('active')); el.classList.add('active'); renderDiag(); }
 function renderDiag(){
-  const q=(document.getElementById('oilSearch').value||'').toLowerCase(); // Or create a dedicated diag search input element
-  const rows=vehicles.filter(v=>{
-    if(q && !`${v.id} ${v.fn}`.toLowerCase().includes(q)) return false;
+  // Clear out any old reference to "q" that causes a crash
+  const rows = vehicles.filter(v => {
+    // Keep the working status filter buttons alive
+    if (activeFilter !== 'all') {
+      if (activeFilter === 'exp' && (daysUntil(v.diagExpiry) ?? 9999) > 0) return false;
+      if (activeFilter === 'ok' && (daysUntil(v.diagExpiry) ?? 9999) <= 0) return false;
+      if (activeFilter !== 'all' && activeFilter !== 'exp' && activeFilter !== 'ok') {
+        if (v.cat !== activeFilter) return false;
+      }
+    }
     return true;
   }).sort((a,b)=>(daysUntil(a.diagExpiry)??9999)-(daysUntil(b.diagExpiry)??9999));
   document.getElementById('diagTbody').innerHTML=rows.map(v=>{
@@ -976,9 +983,13 @@ function renderSchedule(){
 }
 
 async function markDone(row){
-  await postAction({ action: 'markMaintenanceDone', row, user: getUser() });
-  await fetchData(false);
-  toast('Marked as done', 'ok');
+  const res = await postAction({ action: 'markMaintenanceDone', row, user: getUser() });
+  
+  // Only show success and refresh if the server actually allowed it
+  if (res && res.ok) {
+    await fetchData(false);
+    toast('Marked as done', 'ok');
+  }
 }
 async function deleteSchedule(row) {
   if (!confirm("Are you sure you want to delete this scheduled intervention?")) return;
@@ -1184,8 +1195,6 @@ async function saveSchedule(){
 async function postAction(payload) {
   try {
     const action = payload.action;
-    
-    // ATTACH THE BACKEND PASSWORD HERE AUTOMATICALLY
     payload.password = sessionStorage.getItem('dash_pass') || ''; 
     
     const data = encodeURIComponent(JSON.stringify(payload));
@@ -1196,16 +1205,20 @@ async function postAction(payload) {
     const text = await res.text();
     const json = JSON.parse(text);
     
-    // If the backend rejects due to a wrong password, clear it so they can retry on refresh
     if (!json.ok && json.error.includes('Unauthorized')) {
       sessionStorage.removeItem('dash_pass');
     }
     
-    if (!json.ok) toast('Error: ' + (json.error || 'Unknown'), 'err');
+    if (!json.ok) {
+      toast('Error: ' + (json.error || 'Unknown'), 'err');
+      return null; // 🛑 RETURN NULL TO HALT THE CALLING FUNCTION
+    }
+    
     return json;
   } catch(e) {
     toast('Network error. Check connection.', 'err');
     console.error(e);
+    return null;
   }
 }
 

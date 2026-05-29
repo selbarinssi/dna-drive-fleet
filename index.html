@@ -921,7 +921,9 @@ function renderSchedule(){
       <td><span class="badge ${badge}">${type}</span></td>
       <td class="mono" style="font-size:11px">${l['KM at service'] || '—'}</td>
       <td style="font-size:11px">${l['User'] || '—'}</td>
-      <td contenteditable="true" onblur="updateNoteColumn(${l._row}, this.innerText)">${l['Notes'] || ''}</td>
+      <td contenteditable="true" onblur="updateNoteColumn(${l._row}, this.innerText)" style="font-size:11px;color:var(--t2)">
+      ${l['Notes'] || ''}
+      </td>
       <td>
         ${isDone
           ? '<span class="badge b-ok">✓ Done</span>'
@@ -953,15 +955,23 @@ async function deleteSchedule(row) {
   }
 }
 async function updateNoteColumn(row, newText) {
+  // Clean up line breaks or extra spaces the browser might add to editable cells
+  const cleanText = newText.replace(/\n/g, " ").trim(); 
+  
   setSyncState('stale', 'Updating cell...');
-  // Sends the single modified cell directly to your Google Apps Script
-  const res = await postAction({ action: 'updateMaintenanceCell', row: row, column: 6, value: newText, user: getUser() });
+  const res = await postAction({ 
+    action: 'updateMaintenanceCell', 
+    row: row, 
+    column: 6, // Column F in your sheet (Notes)
+    value: cleanText, 
+    user: getUser() 
+  });
   
   if (res && res.ok) {
-    toast('Cell updated', 'ok');
-    await fetchData(false);
+    toast('Notes updated', 'ok');
+    await fetchData(false); // Reload state
   } else {
-    toast('Failed to update', 'err');
+    toast('Failed to update notes', 'err');
     setSyncState('ok', 'Synced');
   }
 }

@@ -216,6 +216,39 @@ select.form-input{cursor:pointer}
 .usage-date-input{padding:4px 8px;border:1px solid var(--bd);border-radius:var(--r);font-family:var(--font);font-size:11px;outline:none;background:var(--white)}
 .usage-date-input:focus{border-color:var(--blue)}
 .grid3-usage{display:grid;grid-template-columns:220px 1fr 1fr;gap:16px;margin-bottom:16px}
+@media print {
+  /* Hide everything that isn't the report */
+  .hdr, .tabs, .sync-bar, .clock, .user-badge,
+  .overlay, .toast-wrap, .filters, .row-tools,
+  .act-btn, .btn, #alertBanner { display: none !important; }
+
+  /* Show only the overview page, even if another tab was active */
+  .page { display: none !important; }
+  #page-overview { display: block !important; }
+
+  /* Clean up layout for paper */
+  body { background: #fff; font-size: 12px; }
+  .content { padding: 8px; }
+  .kpi-row { grid-template-columns: repeat(7,1fr); gap: 8px; margin-bottom: 12px; }
+  .sec { border: 1px solid #ccc; box-shadow: none; page-break-inside: avoid; }
+  .grid2 { grid-template-columns: 1fr 1fr; }
+  .grid3-usage { grid-template-columns: 200px 1fr 1fr; }
+
+  /* Add a report header at the top */
+  #page-overview::before {
+    content: "D&A Drive — Fleet Report";
+    display: block;
+    font-size: 18px;
+    font-weight: 700;
+    color: #0047AB;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #0047AB;
+  }
+
+  /* Hide the print button itself */
+  #printBtn { display: none !important; }
+}
 </style>
 </head>
 <body>
@@ -257,6 +290,9 @@ select.form-input{cursor:pointer}
 
 <!-- OVERVIEW -->
 <div class="page active" id="page-overview">
+  <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+    <button id="printBtn" class="btn btn-outline" onclick="window.print()">🖨 Print / Export PDF</button>
+  </div>
   <div class="kpi-row" id="kpiRow"></div>
   <div class="alert-wrap" id="alertBanner"></div>
   <div class="grid2">
@@ -271,10 +307,6 @@ select.form-input{cursor:pointer}
       <div class="sec-title"><span class="sec-title-left">📍 Fleet by zone</span></div>
       <div id="zoneBars"></div>
     </div>
-  </div>
-  <div class="sec">
-    <div class="sec-title"><span class="sec-title-left">⚠️ Top 10 — closest to oil change</span></div>
-    <div class="m-list" id="oilUrgent"></div>
   </div>
 
   <!-- APP USAGE SECTION -->
@@ -317,7 +349,13 @@ select.form-input{cursor:pointer}
   </div>
 </div>
 
-<!-- OIL CHANGES -->
+  <!-- TOP 10 OIL -->
+  <div class="sec">
+    <div class="sec-title"><span class="sec-title-left">⚠️ Top 10 — closest to oil change</span></div>
+    <div class="m-list" id="oilUrgent"></div>
+  </div>
+
+  <!-- OIL CHANGES -->
 <div class="page" id="page-oil">
   <div class="filters" id="oilFilters">
     <button class="fbtn active" onclick="filterOil('all',this)">All</button>
@@ -406,7 +444,10 @@ select.form-input{cursor:pointer}
   </div>
   <div class="row-tools">
     <button class="btn btn-primary" onclick="openScheduleModal()">+ Plan intervention</button>
-    <input class="srch" type="text" id="schedSearch" placeholder="Filter by vehicle ID or zone…" oninput="renderSchedule()">
+    <input class="srch" type="text" id="schedSearch" placeholder="Filter by vehicle ID…" oninput="renderSchedule()">
+    <input class="usage-date-input" type="date" id="schedDateFrom" onchange="renderSchedule()" title="From date">
+    <span style="font-size:10px;color:var(--t3)">→</span>
+    <input class="usage-date-input" type="date" id="schedDateTo" onchange="renderSchedule()" title="To date">
     <span class="count-lbl" id="schedCount"></span>
   </div>
   <div class="tbl-wrap">
@@ -1011,12 +1052,28 @@ function filterSched(f, el){
 
 // ---- SCHEDULE TABLE ----
 function renderSchedule(){
-  const q = (document.getElementById('schedSearch').value || '').toLowerCase();
+  const q       = (document.getElementById('schedSearch').value || '').toLowerCase();
+  const fromVal = document.getElementById('schedDateFrom') ? document.getElementById('schedDateFrom').value : '';
+  const toVal   = document.getElementById('schedDateTo')   ? document.getElementById('schedDateTo').value   : '';
+  const fromD   = fromVal ? new Date(fromVal + 'T00:00:00') : null;
+  const toD     = toVal   ? new Date(toVal   + 'T23:59:59') : null;
+
   const rows = [...maintenance].reverse().filter(l => {
     if(schedFilter !== 'all' && l['Type'] !== schedFilter) return false;
     if(q && !`${l['Vehicle ID']}`.toLowerCase().includes(q)) return false;
+    if(fromD || toD){
+      // Timestamp comes as "dd/MM/yyyy HH:mm" from Apps Script
+      const raw = (l['Timestamp'] || '').trim();
+      const match = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+      if(match){
+        const ts = new Date(`${match[3]}-${match[2]}-${match[1]}T00:00:00`);
+        if(fromD && ts < fromD) return false;
+        if(toD   && ts > toD)   return false;
+      }
+    }
     return true;
   });
+  
   document.getElementById('schedCount').textContent = rows.length + ' entries';
   const typeColors = {
     'Oil Change':         'b-ok',
@@ -1403,10 +1460,16 @@ function buildAppUsage(){
     // Show at most 14 bars to keep it readable; if more days, aggregate
     const showDays = rangeDays.length <= 14 ? rangeDays : rangeDays.slice(-14);
     dayBarsEl.innerHTML = showDays.map(d => {
-      const key = d.toISOString().slice(0,10);
+      const key = d.getFullYear() + '-' +
+            String(d.getMonth()+1).padStart(2,'0') + '-' +
+            String(d.getDate()).padStart(2,'0');
       const count = scansByDay[key] || 0;
       const heightPct = Math.round(count / maxScans * 100);
-      const isToday = key === new Date().toISOString().slice(0,10);
+      const now = new Date();
+      const todayKey = now.getFullYear() + '-' +
+                 String(now.getMonth()+1).padStart(2,'0') + '-' +
+                 String(now.getDate()).padStart(2,'0');
+      const isToday = key === todayKey;
       const barColor = count === 0 ? '#E0DDD6' : isToday ? '#0047AB' : '#7BA4E0';
       const dayLabel = d.toLocaleDateString('fr-MA', {weekday:'short',day:'2-digit'}).replace(' ','<br>');
       return `<div class="usage-day-col">

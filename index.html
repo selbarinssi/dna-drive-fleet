@@ -53,7 +53,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--t1);font-size:13px
 .page{display:none}.page.active{display:block}
 
 /* KPI */
-.kpi-row{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:18px}
+.kpi-row{display:grid;grid-template-columns:repeat(7,1fr);gap:12px;margin-bottom:18px}
 .kpi{background:var(--white);border-radius:var(--r-lg);padding:14px 16px;border:1px solid var(--bd);border-top:3px solid var(--accent,var(--blue));box-shadow:var(--shadow)}
 .kpi-label{font-size:10px;font-weight:600;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px}
 .kpi-val{font-size:26px;font-weight:600;color:var(--accent,var(--blue));line-height:1;letter-spacing:-1px}
@@ -192,6 +192,30 @@ select.form-input{cursor:pointer}
 .sched-card:hover{border-color:var(--blue);background:var(--blue-l)}
 .sched-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;margin-top:3px}
 .sched-list{display:flex;flex-direction:column;gap:8px}
+
+/* APP USAGE */
+.usage-kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:6px}
+.usage-donut-wrap{display:flex;align-items:center;justify-content:center;gap:10px;padding:6px 0 2px}
+.usage-ring-track{fill:none;stroke:var(--bg);stroke-width:10}
+.usage-ring-fill{fill:none;stroke-width:10;stroke-linecap:round;transition:stroke-dasharray .6s ease}
+.usage-ring-label{font-family:var(--mono);font-size:22px;font-weight:600;dominant-baseline:central;text-anchor:middle}
+.usage-ring-sub{font-size:9px;dominant-baseline:central;text-anchor:middle;fill:var(--t3)}
+.usage-day-bars{display:flex;align-items:flex-end;gap:4px;height:60px;padding:0 2px}
+.usage-day-col{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1}
+.usage-day-bar-wrap{flex:1;width:100%;display:flex;align-items:flex-end;justify-content:center}
+.usage-day-bar{width:100%;border-radius:3px 3px 0 0;transition:height .4s ease;min-height:2px;cursor:pointer;position:relative}
+.usage-day-bar:hover{opacity:.8}
+.usage-day-lbl{font-size:9px;color:var(--t3);white-space:nowrap;text-align:center}
+.usage-day-val{font-size:9px;color:var(--t2);font-weight:600;text-align:center;margin-bottom:2px}
+.unscan-zone{margin-bottom:10px}
+.unscan-zone-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}
+.unscan-zone-name{font-size:11px;font-weight:600;color:var(--t2);display:flex;align-items:center;gap:5px}
+.unscan-chips{display:flex;flex-wrap:wrap;gap:4px}
+.unscan-chip{font-size:10px;font-family:var(--mono);background:var(--danger-bg);color:var(--danger);border:1px solid var(--danger-bd);padding:2px 8px;border-radius:3px}
+.usage-filter-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.usage-date-input{padding:4px 8px;border:1px solid var(--bd);border-radius:var(--r);font-family:var(--font);font-size:11px;outline:none;background:var(--white)}
+.usage-date-input:focus{border-color:var(--blue)}
+.grid3-usage{display:grid;grid-template-columns:220px 1fr 1fr;gap:16px;margin-bottom:16px}
 </style>
 </head>
 <body>
@@ -251,6 +275,45 @@ select.form-input{cursor:pointer}
   <div class="sec">
     <div class="sec-title"><span class="sec-title-left">⚠️ Top 10 — closest to oil change</span></div>
     <div class="m-list" id="oilUrgent"></div>
+  </div>
+
+  <!-- APP USAGE SECTION -->
+  <div class="sec" style="margin-top:16px">
+    <div class="sec-title">
+      <span class="sec-title-left">📱 App Usage — Daily Scans</span>
+      <div class="usage-filter-row">
+        <button class="fbtn active" id="usageBtn7" onclick="setUsageRange(7,this)">Last 7 days</button>
+        <button class="fbtn" id="usageBtnToday" onclick="setUsageRange(1,this)">Today</button>
+        <button class="fbtn" id="usageBtn30" onclick="setUsageRange(30,this)">Last 30 days</button>
+        <span style="font-size:10px;color:var(--t3);margin-left:4px">or custom:</span>
+        <input class="usage-date-input" type="date" id="usageDateFrom" onchange="setUsageCustom()">
+        <span style="font-size:10px;color:var(--t3)">→</span>
+        <input class="usage-date-input" type="date" id="usageDateTo" onchange="setUsageCustom()">
+      </div>
+    </div>
+    <div class="grid3-usage">
+      <!-- Ring gauge -->
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+        <div style="font-size:10px;font-weight:600;color:var(--t2);text-transform:uppercase;letter-spacing:.5px">% App Usage</div>
+        <svg id="usageRingSvg" width="160" height="160" viewBox="0 0 160 160">
+          <circle class="usage-ring-track" cx="80" cy="80" r="66"/>
+          <circle class="usage-ring-fill" id="usageRingFill" cx="80" cy="80" r="66" transform="rotate(-90 80 80)" stroke-dasharray="0 415" stroke="#0047AB"/>
+          <text class="usage-ring-label" id="usageRingPct" x="80" y="74" fill="var(--t1)">—</text>
+          <text class="usage-ring-sub" x="80" y="94" font-size="10" fill="var(--t3)" text-anchor="middle">scanned</text>
+        </svg>
+        <div style="font-size:11px;color:var(--t2);text-align:center" id="usageRingCaption">— / — vehicles</div>
+      </div>
+      <!-- Daily bar chart -->
+      <div>
+        <div style="font-size:10px;font-weight:600;color:var(--t2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Scans per day</div>
+        <div class="usage-day-bars" id="usageDayBars"></div>
+      </div>
+      <!-- Not scanned by zone -->
+      <div>
+        <div style="font-size:10px;font-weight:600;color:var(--t2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Not scanned — by zone</div>
+        <div id="usageNotScanned" style="max-height:220px;overflow-y:auto"></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -617,6 +680,7 @@ const TODAY = new Date();
 
 let vehicles = [];
 let logs = [];
+let dailyChecks = [];
 let scheduled = [];
 let oilFilter = 'all';
 let fleetFilter = 'all';
@@ -626,6 +690,9 @@ let donutChart = null;
 let syncInterval = null;
 let lastModified = null;
 let maintenance = [];
+let usageDays = 7;
+let usageFrom = null;
+let usageTo = null;
 
 // ---- USER ----
 function getUser(){ return localStorage.getItem('dna_user') || ''; }
@@ -667,17 +734,20 @@ function setSyncState(state, msg){
 async function fetchData(manual) {
   if (manual) setSyncState('stale', 'Refreshing…');
   try {
-    const [vRes, lRes, mRes] = await Promise.all([
+    const [vRes, lRes, mRes, dRes] = await Promise.all([
       fetch(API_URL + '?action=getVehicles&t='        + Date.now(), { redirect:'follow', mode:'cors' }),
       fetch(API_URL + '?action=getLogs&t='            + Date.now(), { redirect:'follow', mode:'cors' }),
-      fetch(API_URL + '?action=getMaintenanceLog&t='  + Date.now(), { redirect:'follow', mode:'cors' })
+      fetch(API_URL + '?action=getMaintenanceLog&t='  + Date.now(), { redirect:'follow', mode:'cors' }),
+      fetch(API_URL + '?action=getDailyChecks&t='     + Date.now(), { redirect:'follow', mode:'cors' })
     ]);
     const vData = await vRes.json();
     const lData = await lRes.json();
     const mData = await mRes.json();
+    const dData = await dRes.json();
     if(vData.ok){ vehicles = vData.data.map(mapVehicle); lastModified = vData.lastModified; }
     if(lData.ok){ logs = lData.data; }
     if(mData.ok){ maintenance = mData.data; }
+    if(dData.ok){ dailyChecks = dData.data; }
     document.getElementById('loadingOverlay').style.display = 'none';
     setSyncState('ok', 'Synced ' + new Date().toLocaleTimeString('fr-MA',{hour:'2-digit',minute:'2-digit'}));
     rebuildAll();
@@ -754,6 +824,7 @@ function rebuildAll(){
   buildDonut();
   buildZoneBars();
   buildOilUrgent();
+  buildAppUsage();
   renderOil();
   renderFleet();
   renderDiag();
@@ -778,7 +849,8 @@ function buildKPI(){
     <div class="kpi" style="--accent:var(--warn)"><div class="kpi-label">Oil critical</div><div class="kpi-val" style="color:var(--warn)">${critical}</div><div class="kpi-sub">&lt;2,000 km left</div></div>
     <div class="kpi" style="--accent:#92400e"><div class="kpi-label">Oil due soon</div><div class="kpi-val" style="color:#92400e">${soon}</div><div class="kpi-sub">&lt;5,000 km left</div></div>
     <div class="kpi" style="--accent:var(--ok)"><div class="kpi-label">Oil OK</div><div class="kpi-val" style="color:var(--ok)">${ok}</div><div class="kpi-sub">No action needed</div></div>
-    <div class="kpi" style="--accent:var(--danger)"><div class="kpi-label">Diag urgent</div><div class="kpi-val" style="color:var(--danger)">${diagUrgent}</div><div class="kpi-sub">Overdue or &lt;30d</div></div>`;
+    <div class="kpi" style="--accent:var(--danger)"><div class="kpi-label">Diag urgent</div><div class="kpi-val" style="color:var(--danger)">${diagUrgent}</div><div class="kpi-sub">Overdue or &lt;30d</div></div>
+    <div class="kpi" style="--accent:var(--blue)" id="kpiAppUsage"><div class="kpi-label">% App Usage</div><div class="kpi-val" id="kpiAppUsageVal">—</div><div class="kpi-sub" id="kpiAppUsageSub">Last 7 days</div></div>`;
   // Alerts
   let html='';
   const overdueList=vehicles.filter(v=>oilStatus(v).cat==='overdue');
@@ -1219,6 +1291,167 @@ async function postAction(payload) {
     toast('Network error. Check connection.', 'err');
     console.error(e);
     return null;
+  }
+}
+
+// ---- APP USAGE ----
+function usageDateRange(){
+  // Returns {from: Date, to: Date} for the current filter
+  const to = new Date(); to.setHours(23,59,59,999);
+  let from;
+  if(usageFrom && usageTo){
+    // Custom range
+    from = new Date(usageFrom); from.setHours(0,0,0,0);
+    const customTo = new Date(usageTo); customTo.setHours(23,59,59,999);
+    return { from, to: customTo };
+  }
+  from = new Date();
+  from.setDate(from.getDate() - (usageDays - 1));
+  from.setHours(0,0,0,0);
+  return { from, to };
+}
+
+function setUsageRange(days, el){
+  usageDays = days;
+  usageFrom = null;
+  usageTo = null;
+  document.getElementById('usageDateFrom').value = '';
+  document.getElementById('usageDateTo').value = '';
+  document.querySelectorAll('.usage-filter-row .fbtn').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  buildAppUsage();
+}
+
+function setUsageCustom(){
+  const from = document.getElementById('usageDateFrom').value;
+  const to   = document.getElementById('usageDateTo').value;
+  if(!from || !to) return;
+  usageFrom = from;
+  usageTo   = to;
+  document.querySelectorAll('.usage-filter-row .fbtn').forEach(b=>b.classList.remove('active'));
+  buildAppUsage();
+}
+
+function buildAppUsage(){
+  if(!vehicles.length) return;
+  const { from, to } = usageDateRange();
+
+  // Filter scans within range
+  const scansInRange = dailyChecks.filter(c => {
+    if(!c.timestamp) return false;
+    const d = new Date(c.timestamp);
+    return d >= from && d <= to;
+  });
+
+  // Unique vehicles scanned in this period
+  const scannedIds = new Set(scansInRange.map(c => String(c.vehicleId).trim()));
+
+  // All fleet vehicle IDs
+  const allIds = vehicles.map(v => v.id);
+  const total  = allIds.length;
+  const scanned = allIds.filter(id => scannedIds.has(id)).length;
+  const pct = total > 0 ? Math.round(scanned / total * 100) : 0;
+
+  // Update KPI card
+  const kpiEl  = document.getElementById('kpiAppUsageVal');
+  const kpiSub = document.getElementById('kpiAppUsageSub');
+  const kpiCard = document.getElementById('kpiAppUsage');
+  if(kpiEl){
+    kpiEl.textContent = pct + '%';
+    const accent = pct >= 80 ? 'var(--ok)' : pct >= 50 ? 'var(--warn)' : 'var(--danger)';
+    kpiEl.style.color = accent;
+    kpiCard.style.setProperty('--accent', accent);
+    const label = usageFrom && usageTo
+      ? usageFrom.slice(5).split('-').reverse().join('/') + '–' + usageTo.slice(5).split('-').reverse().join('/')
+      : usageDays === 1 ? 'Today' : 'Last ' + usageDays + ' days';
+    kpiSub.textContent = label;
+  }
+
+  // --- Ring gauge ---
+  const circumference = 2 * Math.PI * 66; // r=66 → ~414.7
+  const filled = circumference * pct / 100;
+  const ringFill = document.getElementById('usageRingFill');
+  const ringPct  = document.getElementById('usageRingPct');
+  const ringCap  = document.getElementById('usageRingCaption');
+  if(ringFill){
+    const color = pct >= 80 ? '#15803D' : pct >= 50 ? '#B45309' : '#C0392B';
+    ringFill.setAttribute('stroke-dasharray', filled + ' ' + (circumference - filled));
+    ringFill.setAttribute('stroke', color);
+    ringPct.textContent = pct + '%';
+    ringPct.setAttribute('fill', color);
+    ringCap.textContent = scanned + ' / ' + total + ' vehicles';
+  }
+
+  // --- Daily bar chart ---
+  // Build list of days in range
+  const dayMs = 86400000;
+  const rangeDays = [];
+  let cur = new Date(from); cur.setHours(0,0,0,0);
+  while(cur <= to){
+    rangeDays.push(new Date(cur));
+    cur = new Date(cur.getTime() + dayMs);
+  }
+  // Count scans per day (by date string YYYY-MM-DD)
+  const scansByDay = {};
+  scansInRange.forEach(c => {
+    const day = c.timestamp.slice(0,10);
+    scansByDay[day] = (scansByDay[day] || 0) + 1;
+  });
+  const maxScans = Math.max(1, ...Object.values(scansByDay));
+  const dayBarsEl = document.getElementById('usageDayBars');
+  if(dayBarsEl){
+    // Show at most 14 bars to keep it readable; if more days, aggregate
+    const showDays = rangeDays.length <= 14 ? rangeDays : rangeDays.slice(-14);
+    dayBarsEl.innerHTML = showDays.map(d => {
+      const key = d.toISOString().slice(0,10);
+      const count = scansByDay[key] || 0;
+      const heightPct = Math.round(count / maxScans * 100);
+      const isToday = key === new Date().toISOString().slice(0,10);
+      const barColor = count === 0 ? '#E0DDD6' : isToday ? '#0047AB' : '#7BA4E0';
+      const dayLabel = d.toLocaleDateString('fr-MA', {weekday:'short',day:'2-digit'}).replace(' ','<br>');
+      return `<div class="usage-day-col">
+        <div class="usage-day-val" style="color:${count===0?'var(--t3)':'var(--t1)'}">${count||''}</div>
+        <div class="usage-day-bar-wrap">
+          <div class="usage-day-bar" style="height:${Math.max(heightPct,count>0?4:0)}%;background:${barColor};width:100%" title="${key}: ${count} scan(s)"></div>
+        </div>
+        <div class="usage-day-lbl">${dayLabel}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // --- Not scanned by zone ---
+  const notScanned = vehicles.filter(v => !scannedIds.has(v.id));
+  // Group by zone prefix (first word of Function field)
+  const byZone = {};
+  notScanned.forEach(v => {
+    const zone = (v.fn || 'Unknown').split(' ')[0];
+    if(!byZone[zone]) byZone[zone] = [];
+    byZone[zone].push(v);
+  });
+  const zoneOrder = ['CAS','RBA','RAK','AGA','MKS','TRS','CAB','DOWN'];
+  const sortedZones = [...Object.keys(byZone)].sort((a,b) => {
+    const ia = zoneOrder.indexOf(a); const ib = zoneOrder.indexOf(b);
+    if(ia === -1 && ib === -1) return a.localeCompare(b);
+    if(ia === -1) return 1; if(ib === -1) return -1;
+    return ia - ib;
+  });
+  const notScannedEl = document.getElementById('usageNotScanned');
+  if(notScannedEl){
+    if(notScanned.length === 0){
+      notScannedEl.innerHTML = `<div style="font-size:12px;color:var(--ok);font-weight:600;padding:8px 0">✓ All vehicles scanned in this period</div>`;
+    } else {
+      notScannedEl.innerHTML = sortedZones.map(zone => {
+        const zoneVehicles = byZone[zone];
+        const zoneName = {'CAS':'Casablanca','RBA':'Rabat','RAK':'Marrakech','AGA':'Agadir','MKS':'Meknès','TRS':'Transport','CAB':'Tanger/CAB','DOWN':'Down/Garage'}[zone] || zone;
+        return `<div class="unscan-zone">
+          <div class="unscan-zone-hdr">
+            <span class="unscan-zone-name"><span class="pill">${zone}</span>${zoneName}</span>
+            <span style="font-size:10px;color:var(--t3)">${zoneVehicles.length} vehicle${zoneVehicles.length>1?'s':''}</span>
+          </div>
+          <div class="unscan-chips">${zoneVehicles.map(v=>`<span class="unscan-chip">${v.id}</span>`).join('')}</div>
+        </div>`;
+      }).join('');
+    }
   }
 }
 

@@ -1,46 +1,74 @@
 // ================================================================
 // D&A DRIVE — Complete code.gs
 // ================================================================
-
 // ---- Sheet names ----
 var SHEET_VEHICLES    = 'Vehicles';
 var SHEET_DAILY       = 'Daily Checks';
 var SHEET_MAINTENANCE = 'Maintenance';
-var SHEET_LOG         = 'MaintenanceLog';
+var SHEET_LOG = 'DashboardLog';
 
 // ================================================================
 // GET — serves driver forms + dashboard API
 // ================================================================
 function doGet(e) {
   var action = e && e.parameter && e.parameter.action;
+  
+  // 1. READ ONLY actions that anyone can see (if you want the public to view dashboards)
   if (action === 'getVehicles') return getVehicles_();
   if (action === 'getLogs')     return getLogs_();
+  if (action === 'getMaintenanceLog') return getMaintenanceLog_();
 
-  // --- existing form routing (unchanged) ---
+  // 2. WRITE ACTIONS — These change data and MUST be protected
+  var writeActions = [
+    'updateVehicle', 'logOilChange', 'logDiagnostic', 
+    'logMaintenance', 'addVehicle', 'markMaintenanceDone', 
+    'deleteMaintenanceRow', 'updateMaintenanceCell'
+  ];
+
+  if (writeActions.indexOf(action) !== -1) {
+    try {
+      var payload = JSON.parse(e.parameter.payload);
+      
+      // Fetch the password you saved securely in Part 1
+      var correctPassword = PropertiesService.getScriptProperties().getProperty('DASHBOARD_PASSWORD');
+      
+      // Verify if the user provided the correct password
+      if (!payload.password || payload.password !== correctPassword) {
+        return cors_(ContentService.createTextOutput(JSON.stringify({ 
+          ok: false, 
+          error: 'Unauthorized: Invalid or missing dashboard password.' 
+        })));
+      }
+      
+      // Password is correct! Run the requested action
+      if (action === 'updateVehicle')       return updateVehicle_(payload);
+      if (action === 'logOilChange')        return logOilChange_(payload);
+      if (action === 'logDiagnostic')       return logDiagnostic_(payload);
+      if (action === 'logMaintenance')      return logMaintenance_(payload);
+      if (action === 'addVehicle')          return addVehicle_(payload);
+      if (action === 'markMaintenanceDone') return markMaintenanceDone_(payload);
+      if (action === 'deleteMaintenanceRow') return deleteMaintenanceRow_(payload);
+      if (action === 'updateMaintenanceCell') return updateMaintenanceCell_(payload);
+
+    } catch(err) { 
+      return cors_(ContentService.createTextOutput(JSON.stringify({ ok: false, error: err.toString() }))); 
+    }
+  }
+
+  // --- Driver HTML forms (keep as is) ---
   try {
     var page = e.parameter.page;
-    Logger.log("Requested page: " + page);
     if (page === 'incidents') {
-      Logger.log("Serving Incidents.html");
-      return HtmlService.createHtmlOutputFromFile('Incidents')
-        .setTitle('IKEA Incident Report')
-        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+      return HtmlService.createHtmlOutputFromFile('Incidents').setTitle('IKEA Incident Report').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
     }
-    Logger.log("Serving checkForm.html");
-    return HtmlService.createHtmlOutputFromFile('checkForm')
-      .setTitle('IKEA Fleet Control')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    return HtmlService.createHtmlOutputFromFile('checkForm').setTitle('IKEA Fleet Control').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   } catch (err) {
-    Logger.log("Error in doGet: " + err.message);
-    return HtmlService.createHtmlOutput(
-      '<h2>Error</h2><p>Unable to load the requested page: ' + err.message + '</p>'
-    ).setTitle('Error - IKEA Fleet Control')
-     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    return HtmlService.createHtmlOutput('<h2>Error</h2><p>' + err.message + '</p>').setTitle('Error').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
 }
 
 // ================================================================
-// POST — dashboard write actions
+// POST — kept for compatibility but dashboard uses GET
 // ================================================================
 function doPost(e) {
   try {
@@ -50,6 +78,7 @@ function doPost(e) {
     if (action === 'logMaintenance') return logMaintenance_(payload);
     if (action === 'logOilChange')   return logOilChange_(payload);
     if (action === 'logDiagnostic')  return logDiagnostic_(payload);
+    if (action === 'addVehicle')     return addVehicle_(payload);
     return cors_(ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'Unknown action: ' + action })));
   } catch(err) {
     return cors_(ContentService.createTextOutput(JSON.stringify({ ok: false, error: err.toString() })));
@@ -104,6 +133,26 @@ function getLogs_() {
   return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true, data: rows })));
 }
 
+function getMaintenanceLog_() {
+  var ss   = SpreadsheetApp.getActiveSpreadsheet();
+  var sh   = ss.getSheetByName(SHEET_MAINTENANCE);
+  if (!sh) return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true, data: [] })));
+  var data = sh.getDataRange().getValues();
+  if (data.length < 2) return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true, data: [] })));
+  var headers = data[0];
+  var rows = data.slice(1).map(function(row, i) {
+    var obj = { _row: i + 2 }; // 1-based row index for updates
+    headers.forEach(function(h, j) {
+      var v = row[j];
+      if (v instanceof Date) {
+        v = Utilities.formatDate(v, Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm');
+      }
+      obj[h] = v;
+    });
+    return obj;
+  });
+  return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true, data: rows })));
+}
 // ================================================================
 // DASHBOARD API — write functions
 // ================================================================
@@ -112,8 +161,7 @@ function updateVehicle_(payload) {
   var sh      = ss.getSheetByName(SHEET_VEHICLES);
   var data    = sh.getDataRange().getValues();
   var headers = data[0];
-
-  var rowIdx = -1;
+  var rowIdx  = -1;
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][0]) === String(payload.vehicleId)) {
       rowIdx = i + 1;
@@ -123,7 +171,6 @@ function updateVehicle_(payload) {
   if (rowIdx === -1) {
     return cors_(ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'Vehicle ID not found: ' + payload.vehicleId })));
   }
-
   var changed = [];
   Object.keys(payload.fields).forEach(function(fieldName) {
     var colIdx = headers.indexOf(fieldName);
@@ -131,7 +178,6 @@ function updateVehicle_(payload) {
     sh.getRange(rowIdx, colIdx + 1).setValue(payload.fields[fieldName]);
     changed.push(fieldName + ' → ' + payload.fields[fieldName]);
   });
-
   appendLog_(ss, {
     timestamp: new Date(),
     vehicleId: payload.vehicleId,
@@ -139,7 +185,6 @@ function updateVehicle_(payload) {
     user:      payload.user || 'Unknown',
     note:      payload.note || ''
   });
-
   return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true, updated: changed })));
 }
 
@@ -147,7 +192,6 @@ function logOilChange_(payload) {
   var km        = Number(payload.currentKm);
   var nextOilKm = km + 15000;
   var today     = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy');
-
   updateVehicle_({
     vehicleId: payload.vehicleId,
     fields: {
@@ -159,13 +203,11 @@ function logOilChange_(payload) {
     user: payload.user,
     note: 'Oil change logged'
   });
-
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName(SHEET_MAINTENANCE);
   if (sh) {
-    sh.appendRow([new Date(), payload.vehicleId, 'Oil Change', km, payload.user || 'Unknown', payload.note || '']);
+    sh.appendRow([new Date(), payload.vehicleId, 'Oil Change', km, payload.user || 'Unknown', payload.note || '', 'Pending']);
   }
-
   return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true })));
 }
 
@@ -176,43 +218,100 @@ function logDiagnostic_(payload) {
     user: payload.user,
     note: 'Annual diagnostic renewed'
   });
-
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName(SHEET_MAINTENANCE);
   if (sh) {
-    sh.appendRow([new Date(), payload.vehicleId, 'Annual Diagnostic', '', payload.user || 'Unknown', 'New expiry: ' + payload.newExpiryDate]);
+    sh.appendRow([new Date(), payload.vehicleId, 'Annual Diagnostic', '', payload.user || 'Unknown', 'New expiry: ' + payload.newExpiryDate, 'Pending']);
   }
-
   return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true })));
 }
 
 function logMaintenance_(payload) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = getOrCreateLogSheet_(ss);
-  sh.appendRow([
-    new Date(),
-    payload.vehicleId   || '',
-    payload.type        || 'General',
-    payload.km          || '',
-    payload.scheduledDate || '',
-    payload.mechanic    || '',
-    payload.user        || 'Unknown',
-    payload.note        || ''
-  ]);
+
+  // Maintenance sheet — history shown on dashboard
+  var msh = ss.getSheetByName(SHEET_MAINTENANCE);
+  if (msh) {
+    msh.appendRow([
+      new Date(),
+      payload.vehicleId    || '',
+      payload.type         || 'General',
+      payload.km           || '',
+      payload.user         || 'Unknown',
+      payload.note         || '',
+      'Pending'
+    ]);
+  }
+
+  // DashboardLog — full audit trail
+  appendLog_(ss, {
+    timestamp: new Date(),
+    vehicleId: payload.vehicleId || '',
+    action:    'Scheduled: ' + (payload.type || 'General'),
+    user:      payload.user  || 'Unknown',
+    note:      'Date: ' + (payload.scheduledDate || '—') + (payload.mechanic ? ' · ' + payload.mechanic : '') + (payload.note ? ' · ' + payload.note : '')
+  });
+
   return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true })));
 }
 
+function addVehicle_(payload) {
+  var ss      = SpreadsheetApp.getActiveSpreadsheet();
+  var sh      = ss.getSheetByName(SHEET_VEHICLES);
+  var headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  var newRow  = headers.map(function(h) {
+    return payload.fields[h] !== undefined ? payload.fields[h] : '';
+  });
+  sh.appendRow(newRow);
+  appendLog_(ss, {
+    timestamp: new Date(),
+    vehicleId: payload.fields['Vehicle ID'] || '?',
+    action:    'New vehicle added',
+    user:      payload.user || 'Unknown',
+    note:      payload.note || ''
+  });
+  return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true })));
+}
+
+function markMaintenanceDone_(payload) {
+  var ss  = SpreadsheetApp.getActiveSpreadsheet();
+  var sh  = ss.getSheetByName(SHEET_MAINTENANCE);
+  var statusCol = 7; // Column G
+  sh.getRange(payload.row, statusCol).setValue('Done');
+  return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true })));
+}
+function deleteMaintenanceRow_(payload) {
+  var rowNumber = payload.row; 
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(SHEET_MAINTENANCE);
+  
+  if (rowNumber > 1 && rowNumber <= sheet.getLastRow()) {
+    sheet.deleteRow(rowNumber);
+    return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true })));
+  } else {
+    return cors_(ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Invalid row index" })));
+  }
+}
+function updateMaintenanceCell_(payload) {
+  var rowNumber = payload.row;
+  var colNumber = payload.column; // Column index (e.g., 6 for Notes)
+  var newValue = payload.value;
+  
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(SHEET_MAINTENANCE);
+  
+  if (rowNumber > 1 && rowNumber <= sheet.getLastRow()) {
+    sheet.getRange(rowNumber, colNumber).setValue(newValue);
+    return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true })));
+  } else {
+    return cors_(ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Invalid row index" })));
+  }
+}
 // ================================================================
 // HELPERS
 // ================================================================
 function cors_(output) {
-  return output
-    .setMimeType(ContentService.MimeType.JSON)
-    .setHeaders({
-      'Access-Control-Allow-Origin':  '*',
-      'Access-Control-Allow-Methods': 'GET,POST',
-      'Access-Control-Allow-Headers': 'Content-Type'
-    });
+  return output.setMimeType(ContentService.MimeType.JSON);
 }
 
 function getOrCreateLogSheet_(ss) {
@@ -238,14 +337,14 @@ function uploadDailyCheck(formData) {
   try {
     Logger.log("uploadDailyCheck called with formData: " + JSON.stringify(formData));
     const rootFolder = DriveApp.getFolderById('19MizOwvGRKzuG9Ke2im7z7s7lsvRt1Eq');
-    const timestamp = new Date();
-    const dateStr = Utilities.formatDate(timestamp, Session.getScriptTimeZone(), 'dd-MM-yyyy');
-    const photoUrls = [];
+    const timestamp  = new Date();
+    const dateStr    = Utilities.formatDate(timestamp, Session.getScriptTimeZone(), 'dd-MM-yyyy');
+    const photoUrls  = [];
     for (let i = 1; i <= 5; i++) {
       const photoData = formData[`photo${i}`];
       if (photoData && photoData.data) {
-        const fileName = `${dateStr}_${formData.ikeaId}_${formData.matricule}_photo${i}.jpg`;
-        const file = Utilities.newBlob(Utilities.base64Decode(photoData.data), photoData.mimeType, fileName);
+        const fileName  = `${dateStr}_${formData.ikeaId}_${formData.matricule}_photo${i}.jpg`;
+        const file      = Utilities.newBlob(Utilities.base64Decode(photoData.data), photoData.mimeType, fileName);
         const savedFile = rootFolder.createFile(file);
         savedFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
         photoUrls.push(savedFile.getUrl());
@@ -282,15 +381,15 @@ function uploadIncidentReport(formData) {
     Logger.log("uploadIncidentReport called with formData: " + JSON.stringify(formData));
     ensureIncidentsSheet();
     const rootFolder = DriveApp.getFolderById('19MizOwvGRKzuG9Ke2im7z7s7lsvRt1Eq');
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Incidents');
-    const timestamp = new Date();
-    const dateStr = Utilities.formatDate(timestamp, Session.getScriptTimeZone(), 'dd-MM-yyyy');
-    const photoUrls = [];
+    const sheet      = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Incidents');
+    const timestamp  = new Date();
+    const dateStr    = Utilities.formatDate(timestamp, Session.getScriptTimeZone(), 'dd-MM-yyyy');
+    const photoUrls  = [];
     for (let i = 1; i <= 3; i++) {
       const photoData = formData[`photo${i}`];
       if (photoData && photoData.data) {
-        const fileName = `${dateStr}_${formData.ikeaId}_${formData.matricule}_incident_photo${i}.jpg`;
-        const file = Utilities.newBlob(Utilities.base64Decode(photoData.data), photoData.mimeType, fileName);
+        const fileName  = `${dateStr}_${formData.ikeaId}_${formData.matricule}_incident_photo${i}.jpg`;
+        const file      = Utilities.newBlob(Utilities.base64Decode(photoData.data), photoData.mimeType, fileName);
         const savedFile = rootFolder.createFile(file);
         savedFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
         photoUrls.push(savedFile.getUrl());
@@ -305,4 +404,8 @@ function uploadIncidentReport(formData) {
     Logger.log("Error in uploadIncidentReport: " + e.message);
     throw new Error("Failed to submit incident report: " + e.message);
   }
+}
+
+function testRun() {
+  getVehicles_();
 }

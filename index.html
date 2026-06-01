@@ -903,11 +903,11 @@ function renderDiag(){
   // Clear out any old reference to "q" that causes a crash
   const rows = vehicles.filter(v => {
     // Keep the working status filter buttons alive
-    if (activeFilter !== 'all') {
-      if (activeFilter === 'exp' && (daysUntil(v.diagExpiry) ?? 9999) > 0) return false;
-      if (activeFilter === 'ok' && (daysUntil(v.diagExpiry) ?? 9999) <= 0) return false;
-      if (activeFilter !== 'all' && activeFilter !== 'exp' && activeFilter !== 'ok') {
-        if (v.cat !== activeFilter) return false;
+    if (diagFilter !== 'all') {
+      if (diagFilter === 'exp' && (daysUntil(v.diagExpiry) ?? 9999) > 0) return false;
+      if (diagFilter === 'ok' && (daysUntil(v.diagExpiry) ?? 9999) <= 0) return false;
+      if (diagFilter !== 'all' && activeFilter !== 'exp' && activeFilter !== 'ok') {
+        if (v.cat !== diagFilter) return false;
       }
     }
     return true;

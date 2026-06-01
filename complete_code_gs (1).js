@@ -17,6 +17,7 @@ function doGet(e) {
   if (action === 'getVehicles') return getVehicles_();
   if (action === 'getLogs')     return getLogs_();
   if (action === 'getMaintenanceLog') return getMaintenanceLog_();
+  if (action === 'getDailyChecks')    return getDailyChecks_();
 
   // 2. WRITE ACTIONS — These change data and MUST be protected
   var writeActions = [
@@ -153,6 +154,27 @@ function getMaintenanceLog_() {
   });
   return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true, data: rows })));
 }
+function getDailyChecks_() {
+  var ss   = SpreadsheetApp.getActiveSpreadsheet();
+  var sh   = ss.getSheetByName(SHEET_DAILY);
+  if (!sh) return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true, data: [] })));
+  var data = sh.getDataRange().getValues();
+  if (data.length < 2) return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true, data: [] })));
+  // Return cols A (Timestamp), B (Driver ID), C (Vehicle ID) — skip header row
+  var rows = data.slice(1).map(function(row) {
+    var ts = row[0];
+    if (ts instanceof Date) {
+      ts = Utilities.formatDate(ts, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+    }
+    return {
+      timestamp: ts,
+      driverId:  String(row[1] || ''),
+      vehicleId: String(row[2] || '')
+    };
+  }).filter(function(r) { return r.vehicleId !== ''; });
+  return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true, data: rows })));
+}
+
 // ================================================================
 // DASHBOARD API — write functions
 // ================================================================

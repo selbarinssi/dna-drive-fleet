@@ -309,8 +309,7 @@ select.form-input{cursor:pointer}
     </div>
   </div>
 
-  <!-- APP USAGE SECTION -->
-  <div class="sec" style="margin-top:16px">
+  <div class="sec">
     <div class="sec-title">
       <span class="sec-title-left">📱 App Usage — Daily Scans</span>
       <div class="usage-filter-row">
@@ -324,7 +323,6 @@ select.form-input{cursor:pointer}
       </div>
     </div>
     <div class="grid3-usage">
-      <!-- Ring gauge -->
       <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
         <div style="font-size:10px;font-weight:600;color:var(--t2);text-transform:uppercase;letter-spacing:.5px">% App Usage</div>
         <svg id="usageRingSvg" width="160" height="160" viewBox="0 0 160 160">
@@ -335,12 +333,10 @@ select.form-input{cursor:pointer}
         </svg>
         <div style="font-size:11px;color:var(--t2);text-align:center" id="usageRingCaption">— / — vehicles</div>
       </div>
-      <!-- Daily bar chart -->
       <div>
         <div style="font-size:10px;font-weight:600;color:var(--t2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Scans per day</div>
         <div class="usage-day-bars" id="usageDayBars"></div>
       </div>
-      <!-- Not scanned by zone -->
       <div>
         <div style="font-size:10px;font-weight:600;color:var(--t2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Not scanned — by zone</div>
         <div id="usageNotScanned" style="max-height:220px;overflow-y:auto"></div>
@@ -348,8 +344,7 @@ select.form-input{cursor:pointer}
     </div>
   </div>
 
-  <!-- TOP 10 OIL -->
-  <div class="sec" style="margin-top: 16px;">
+  <div class="sec">
     <div class="sec-title"><span class="sec-title-left">⚠️ Top 10 — closest to oil change</span></div>
     <div class="m-list" id="oilUrgent"></div>
   </div>

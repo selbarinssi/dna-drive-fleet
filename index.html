@@ -900,15 +900,15 @@ function renderFleet(){
 // ---- DIAG TABLE ----
 function filterDiag(f,el){ diagFilter=f; document.querySelectorAll('#diagFilters .fbtn').forEach(b=>b.classList.remove('active')); el.classList.add('active'); renderDiag(); }
 function renderDiag(){
-  // Clear out any old reference to "q" that causes a crash
   const rows = vehicles.filter(v => {
-    // Keep the working status filter buttons alive
+    // If a specific filter button is active, run the timeframe checks
     if (diagFilter !== 'all') {
-      if (diagFilter === 'exp' && (daysUntil(v.diagExpiry) ?? 9999) > 0) return false;
-      if (diagFilter === 'ok' && (daysUntil(v.diagExpiry) ?? 9999) <= 0) return false;
-      if (diagFilter !== 'all' && activeFilter !== 'exp' && activeFilter !== 'ok') {
-        if (v.cat !== diagFilter) return false;
-      }
+      const days = daysUntil(v.diagExpiry) ?? 9999;
+      
+      if (diagFilter === 'overdue' && days > 0) return false;          // 🔴 Overdue (days <= 0)
+      if (diagFilter === 'month1' && (days <= 0 || days > 30)) return false;  // 🟠 <1 month (1 to 30 days)
+      if (diagFilter === 'month3' && (days <= 0 || days > 90)) return false;  // 🟡 <3 months (1 to 90 days)
+      if (diagFilter === 'ok' && days <= 0) return false;              // 🟢 OK (days > 0)
     }
     return true;
   }).sort((a,b)=>(daysUntil(a.diagExpiry)??9999)-(daysUntil(b.diagExpiry)??9999));

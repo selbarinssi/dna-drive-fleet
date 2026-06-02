@@ -1223,10 +1223,15 @@ function renderSchedCal(){
     const isToday = new Date(y,m,d).getTime() === today.getTime();
     const evs = evByDay[key] || [];
     const evHtml = evs.slice(0,3).map(r => {
-      const type = r[2] || r['Type'] || 'Other';
-      const vid  = r[1] || r['Vehicle ID'] || '?';
-      const style = typeStyle[type]||typeStyle['Other'];
-      return `<div class="sched-cal-event" style="${style}" title="${vid} — ${type}">${vid}</div>`;
+      const type   = r[2] || r['Type'] || 'Other';
+      const vid    = r[1] || r['Vehicle ID'] || '?';
+      const status = r[6] || r['Status'] || '';
+      const isDone = status.toLowerCase() === 'done';
+      const baseStyle = isDone
+        ? 'background:#f0faf4;color:#15803D;border-color:#86efac;text-decoration:line-through;opacity:.75'
+        : typeStyle[type] || typeStyle['Other'];
+      const typeShort = {'Oil Change':'🛢 Oil','Annual Diagnostic':'📅 Diag','Tyres':'🔧 Tyres','Brake Service':'🛑 Brakes','General Inspection':'🔍 Insp','Other':'📌'}[type] || type;
+      return `<div class="sched-cal-event" style="${baseStyle}" title="${vid} — ${type}${isDone?' (Done)':''}">${vid} · ${typeShort}</div>`;
     }).join('') + (evs.length>3?`<div style="font-size:9px;color:var(--t3)">+${evs.length-3} more</div>`:'');
     cells += `<div class="sched-cal-day${isToday?' today':''}">
       <div class="sched-cal-daynum">${d}</div>${evHtml}</div>`;
@@ -1541,38 +1546,43 @@ function buildAppUsage(){
     rangeDays.push(new Date(cur));
     cur = new Date(cur.getTime() + dayMs);
   }
-  // Count scans per day (by date string YYYY-MM-DD)
-  const scansByDay = {};
-  const uniqueByDay = {}; // unique vehicle IDs per day
+
+  // Count UNIQUE vehicles scanned per day (local date, excluding DOWN/FINANCE)
+  const uniqueByDay = {};
   scansInRange.forEach(c => {
-    const day = c.timestamp.slice(0,10);
-    scansByDay[day] = (scansByDay[day] || 0) + 1;
-    if(!uniqueByDay[day]) uniqueByDay[day] = new Set();
-    uniqueByDay[day].add(String(c.vehicleId).trim());
+    const d2 = new Date(c.timestamp);
+    const key = d2.getFullYear() + '-' +
+                String(d2.getMonth()+1).padStart(2,'0') + '-' +
+                String(d2.getDate()).padStart(2,'0');
+    if(!uniqueByDay[key]) uniqueByDay[key] = new Set();
+    const vid = String(c.vehicleId).trim().toUpperCase();
+    // Only count vehicles that are in appFleet
+    if(allIds.map(x=>x.toUpperCase()).includes(vid)) uniqueByDay[key].add(vid);
   });
-  const maxScans = Math.max(1, ...Object.values(scansByDay));
+  const maxUnique = Math.max(1, ...Object.values(uniqueByDay).map(s=>s.size), 1);
   const dayBarsEl = document.getElementById('usageDayBars');
   if(dayBarsEl){
-    // Show at most 14 bars to keep it readable; if more days, aggregate
     const showDays = rangeDays.length <= 14 ? rangeDays : rangeDays.slice(-14);
+    const allIdsUp = allIds.map(x=>x.toUpperCase());
     dayBarsEl.innerHTML = showDays.map(d => {
       const key = d.getFullYear() + '-' +
             String(d.getMonth()+1).padStart(2,'0') + '-' +
             String(d.getDate()).padStart(2,'0');
-      const count = scansByDay[key] || 0;
-      const heightPct = Math.round(count / maxScans * 100);
+      const uniqueCount = uniqueByDay[key] ? uniqueByDay[key].size : 0;
+      const dayPct = total > 0 ? Math.round(uniqueCount / total * 100) : 0;
+      const heightPct = Math.round(uniqueCount / maxUnique * 100);
       const now = new Date();
       const todayKey = now.getFullYear() + '-' +
                  String(now.getMonth()+1).padStart(2,'0') + '-' +
                  String(now.getDate()).padStart(2,'0');
       const isToday = key === todayKey;
-      const barColor = count === 0 ? '#E0DDD6' : isToday ? '#0047AB' : '#7BA4E0';
+      const barColor = uniqueCount === 0 ? '#E0DDD6' : isToday ? '#0047AB' : '#7BA4E0';
       const dayLabel = d.toLocaleDateString('en-GB', {weekday:'short',day:'2-digit'}).replace(' ','<br>');
       return `<div class="usage-day-col">
-        <div class="usage-day-pct" style="color:${count===0?'var(--t3)':barColor}">${count===0?'—':Math.round((uniqueByDay[key]?.size||0)/total*100)+'%'}</div>
-        <div class="usage-day-cnt" style="color:var(--t3)">${count||''}</div>
+        <div class="usage-day-pct" style="color:${uniqueCount===0?'var(--t3)':barColor}">${uniqueCount===0?'—':dayPct+'%'}</div>
+        <div class="usage-day-cnt">${uniqueCount||''}</div>
         <div class="usage-day-bar-wrap">
-          <div class="usage-day-bar" style="height:${Math.max(heightPct,count>0?4:0)}%;background:${barColor};width:100%" title="${key}: ${count} scan(s)"></div>
+          <div class="usage-day-bar" style="height:${Math.max(heightPct,uniqueCount>0?4:0)}%;background:${barColor};width:100%" title="${key}: ${uniqueCount} unique vehicle(s) — ${dayPct}%"></div>
         </div>
         <div class="usage-day-lbl">${dayLabel}</div>
       </div>`;

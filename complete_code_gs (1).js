@@ -21,9 +21,9 @@ function doGet(e) {
 
   // 2. WRITE ACTIONS — These change data and MUST be protected
   var writeActions = [
-    'updateVehicle', 'logOilChange', 'logDiagnostic', 
-    'logMaintenance', 'addVehicle', 'markMaintenanceDone', 
-    'deleteMaintenanceRow', 'updateMaintenanceCell'
+  'updateVehicle', 'logOilChange', 'logDiagnostic',
+  'logMaintenance', 'addVehicle', 'markMaintenanceDone',
+  'deleteMaintenanceRow', 'updateMaintenanceCell', 'updateMaintenanceRow'  // ← add this
   ];
 
   if (writeActions.indexOf(action) !== -1) {
@@ -50,6 +50,7 @@ function doGet(e) {
       if (action === 'markMaintenanceDone') return markMaintenanceDone_(payload);
       if (action === 'deleteMaintenanceRow') return deleteMaintenanceRow_(payload);
       if (action === 'updateMaintenanceCell') return updateMaintenanceCell_(payload);
+      if (action === 'updateMaintenanceRow') return updateMaintenanceRow_(payload);
 
     } catch(err) { 
       return cors_(ContentService.createTextOutput(JSON.stringify({ ok: false, error: err.toString() }))); 
@@ -328,6 +329,21 @@ function updateMaintenanceCell_(payload) {
   } else {
     return cors_(ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Invalid row index" })));
   }
+}
+function updateMaintenanceRow_(payload) {
+  var ss    = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(SHEET_MAINTENANCE);
+  var row   = payload.row;
+  if (!row || row < 2 || row > sheet.getLastRow()) {
+    return cors_(ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'Invalid row index' })));
+  }
+  // Columns: A=Timestamp(1), B=VehicleID(2), C=Type(3), D=KM(4), E=User(5), F=Notes(6), G=Status(7)
+  // We allow editing B, C, D, F — never touch A (timestamp) or G (status) here
+  sheet.getRange(row, 2).setValue(payload.vehicleId  || '');
+  sheet.getRange(row, 3).setValue(payload.type       || '');
+  sheet.getRange(row, 4).setValue(payload.km         || '');
+  sheet.getRange(row, 6).setValue(payload.note       || '');
+  return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true })));
 }
 // ================================================================
 // HELPERS

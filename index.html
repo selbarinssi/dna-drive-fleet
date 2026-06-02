@@ -621,6 +621,46 @@ select.form-input{cursor:pointer}
     </div>
   </div>
 </div>
+<!-- EDIT SCHEDULE MODAL -->
+<div class="overlay" id="editSchedOverlay">
+  <div class="modal" style="width:480px">
+    <div class="modal-hdr">
+      <div><div class="modal-title">Edit intervention</div></div>
+      <button class="modal-close" onclick="closeModal('editSchedOverlay')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-field">
+          <label class="form-label">Vehicle ID</label>
+          <input class="form-input" id="es-id" placeholder="e.g. V-042">
+        </div>
+        <div class="form-field">
+          <label class="form-label">KM at service</label>
+          <input class="form-input" type="number" id="es-km" placeholder="Optional">
+        </div>
+        <div class="form-field">
+          <label class="form-label">Type</label>
+          <select class="form-input" id="es-type">
+            <option>Oil Change</option>
+            <option>Tyres</option>
+            <option>Annual Diagnostic</option>
+            <option>Brake Service</option>
+            <option>General Inspection</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div class="form-field full">
+          <label class="form-label">Notes</label>
+          <input class="form-input" id="es-note" placeholder="Any relevant details…">
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-outline" onclick="closeModal('editSchedOverlay')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveEditSchedule()">Save changes</button>
+    </div>
+  </div>
+</div>
 <div id="authOverlay" class="overlay" style="display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.6); position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 9999;">
   <div style="font-family:'DM Sans',sans-serif;background: var(--white); padding: 30px; border-radius: 12px; width: 100%; max-width: 400px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); text-align: center;">
     <h3 style="margin-bottom: 10px; color: var(--blue);">D&A Drive Access</h3>
@@ -785,18 +825,15 @@ function setSyncState(state, msg){
 async function fetchData(manual) {
   if (manual) setSyncState('stale', 'Refreshing…');
   try {
-    const [vRes, lRes, mRes, dRes] = await Promise.all([
+    const [vRes, mRes, dRes] = await Promise.all([
       fetch(API_URL + '?action=getVehicles&t='        + Date.now(), { redirect:'follow', mode:'cors' }),
-      fetch(API_URL + '?action=getLogs&t='            + Date.now(), { redirect:'follow', mode:'cors' }),
       fetch(API_URL + '?action=getMaintenanceLog&t='  + Date.now(), { redirect:'follow', mode:'cors' }),
       fetch(API_URL + '?action=getDailyChecks&t='     + Date.now(), { redirect:'follow', mode:'cors' })
     ]);
     const vData = await vRes.json();
-    const lData = await lRes.json();
     const mData = await mRes.json();
     const dData = await dRes.json();
     if(vData.ok){ vehicles = vData.data.map(mapVehicle); lastModified = vData.lastModified; }
-    if(lData.ok){ logs = lData.data; }
     if(mData.ok){ maintenance = mData.data; }
     if(dData.ok){ dailyChecks = dData.data; }
     document.getElementById('loadingOverlay').style.display = 'none';
@@ -1114,7 +1151,8 @@ function renderSchedule(){
       <td>
         ${isDone
           ? '<span class="badge b-ok">✓ Done</span>'
-          : `<button class="act-btn oil" onclick="markDone(${l._row})">Mark done</button>
+          : `<button class="act-btn" onclick='openEditScheduleModal(${l._row}, ${JSON.stringify({vehicleId:l["Vehicle ID"],km:l["KM at service"],type:l["Type"],note:l["Notes"]})})'>✏ Edit</button>
+             <button class="act-btn oil" onclick="markDone(${l._row})">Mark done</button>
              <button class="act-btn" style="border-color:var(--danger-bd); color:var(--danger);" onclick="deleteSchedule(${l._row})">🗑 Delete</button>`
         }
       </td>
@@ -1411,7 +1449,35 @@ async function saveSchedule(){
   await fetchData(false);
   toast('Intervention scheduled','ok');
 }
+let activeSchedRow = null;
 
+function openEditScheduleModal(row, data) {
+  activeSchedRow = row;
+  document.getElementById('es-id').value   = data.vehicleId || '';
+  document.getElementById('es-km').value   = data.km        || '';
+  document.getElementById('es-type').value = data.type      || 'Other';
+  document.getElementById('es-note').value = data.note      || '';
+  openModal('editSchedOverlay');
+}
+
+async function saveEditSchedule() {
+  const id = document.getElementById('es-id').value.trim();
+  if (!id) { toast('Vehicle ID is required', 'err'); return; }
+  const res = await postAction({
+    action:    'updateMaintenanceRow',
+    row:       activeSchedRow,
+    vehicleId: id,
+    type:      document.getElementById('es-type').value,
+    km:        document.getElementById('es-km').value ? Number(document.getElementById('es-km').value) : '',
+    note:      document.getElementById('es-note').value,
+    user:      getUser()
+  });
+  if (res && res.ok) {
+    closeModal('editSchedOverlay');
+    await fetchData(false);
+    toast('Intervention updated', 'ok');
+  }
+}
 // ---- POST ----
 async function postAction(payload) {
   try {
@@ -1672,7 +1738,7 @@ function showPage(name,el){
 // ---- INIT ----
 initUser();
 fetchData(false);
-syncInterval=setInterval(()=>fetchData(false), 60000);
+syncInterval=setInterval(()=>fetchData(false), 300000);
 </script>
 </body>
 </html>

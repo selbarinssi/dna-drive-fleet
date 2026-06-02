@@ -1161,26 +1161,51 @@ function renderSchedule(){
 }
 
 async function markDone(row){
+  // 1. Instantly update the status inside your local cache memory array
+  if (window.maintenanceLog) {
+    const item = window.maintenanceLog.find(i => i._row === row);
+    if (item) item.Status = "Done";
+  }
+
+  // 2. Immediately repaint active viewport components (<5ms)
+  renderSchedule();
+  renderOverview();
+  renderOil();
+  renderDiag();
+  toast('Marked as done', 'ok');
+  
+  // 3. Dispatch the update to Google Sheets quietly without freezing the screen
   const res = await postAction({ action: 'markMaintenanceDone', row, user: getUser() });
   
-  // Only show success and refresh if the server actually allowed it
-  if (res && res.ok) {
-    await fetchData(false);
-    toast('Marked as done', 'ok');
+  if (!res || !res.ok) {
+    // Fallback if the network dropped or server validation failed
+    toast('Failed to sync changes with server. Please refresh.', 'err');
   }
 }
 async function deleteSchedule(row) {
   if (!confirm("Are you sure you want to delete this scheduled intervention?")) return;
   
+  // 1. Instantly remove the deleted item from local memory cache
+  if (window.maintenanceLog) {
+    window.maintenanceLog = window.maintenanceLog.filter(item => item._row !== row);
+  }
+  
+  // 2. Immediately repaint the visual views (<5ms)
+  renderSchedule();
+  renderOverview();
+  toast('Intervention deleted successfully', 'ok');
+  
+  // 3. Sync with Google Sheets quietly in the background without blocking the UI
   setSyncState('stale', 'Deleting row...');
   const res = await postAction({ action: 'deleteMaintenanceRow', row: row, user: getUser() });
   
   if (res && res.ok) {
-    toast('Intervention deleted successfully', 'ok');
-    await fetchData(false); // Force a clean reload from the sheet immediately
-  } else {
-    toast('Failed to delete row', 'err');
+    // Already updated locally and visually, just finalize status badge!
     setSyncState('ok', 'Synced');
+  } else {
+    // Rollback or alert if server communication crashes completely
+    toast('Failed to sync deletion with server. Please refresh.', 'err');
+    setSyncState('ok', 'Sync error');
   }
 }
 async function updateNoteColumn(row, newText) {
@@ -1733,6 +1758,14 @@ function showPage(name,el){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('page-'+name).classList.add('active');
   el.classList.add('active');
+
+  // Performance Optimization: Only run computationally heavy data parsing loops 
+  // for the specific tab layout that the user has explicitly brought into focus.
+  if (name === 'overview') { renderOverview(); }
+  else if (name === 'fleet') { renderFleet(); }
+  else if (name === 'schedule') { renderSchedule(); }
+  else if (name === 'oil') { renderOil(); }
+  else if (name === 'diag') { renderDiag(); }
 }
 
 // ---- INIT ----

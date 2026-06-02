@@ -1191,8 +1191,8 @@ async function deleteSchedule(row) {
   }
   
   // 2. Immediately repaint the visual views (<5ms)
-  renderSchedule();
-  renderOverview();
+  if (typeof renderSchedule === 'function') renderSchedule();
+  if (typeof renderOverview === 'function') renderOverview();
   toast('Intervention deleted successfully', 'ok');
   
   // 3. Sync with Google Sheets quietly in the background without blocking the UI
@@ -1757,15 +1757,14 @@ function showPage(name,el){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('page-'+name).classList.add('active');
-  el.classList.add('active');
+  if(el) el.classList.add('active');
 
-  // Performance Optimization: Only run computationally heavy data parsing loops 
-  // for the specific tab layout that the user has explicitly brought into focus.
-  if (name === 'overview') { renderOverview(); }
-  else if (name === 'fleet') { renderFleet(); }
-  else if (name === 'schedule') { renderSchedule(); }
-  else if (name === 'oil') { renderOil(); }
-  else if (name === 'diag') { renderDiag(); }
+  // Performance Optimization: Check if function exists globally before calling it
+  if (name === 'overview' && typeof renderOverview === 'function') { renderOverview(); }
+  else if (name === 'fleet' && typeof renderFleet === 'function') { renderFleet(); }
+  else if (name === 'schedule' && typeof renderSchedule === 'function') { renderSchedule(); }
+  else if (name === 'oil' && typeof renderOil === 'function') { renderOil(); }
+  else if (name === 'diag' && typeof renderDiag === 'function') { renderDiag(); }
 }
 
 // ---- INIT ----

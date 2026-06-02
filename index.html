@@ -769,8 +769,8 @@ function initUser(){
 function updateClock(){
   const n = new Date();
   document.getElementById('clock').textContent =
-    n.toLocaleDateString('fr-MA',{weekday:'short',day:'2-digit',month:'short'}) + ' · ' +
-    n.toLocaleTimeString('fr-MA',{hour:'2-digit',minute:'2-digit'});
+    n.toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short'}) + ' · ' +
+    n.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
 }
 setInterval(updateClock, 1000); updateClock();
 
@@ -800,7 +800,7 @@ async function fetchData(manual) {
     if(mData.ok){ maintenance = mData.data; }
     if(dData.ok){ dailyChecks = dData.data; }
     document.getElementById('loadingOverlay').style.display = 'none';
-    setSyncState('ok', 'Synced ' + new Date().toLocaleTimeString('fr-MA',{hour:'2-digit',minute:'2-digit'}));
+    setSyncState('ok', 'Synced ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}));
     rebuildAll();
     if(manual) toast('Data refreshed', 'ok');
   } catch(e){
@@ -885,7 +885,7 @@ function rebuildAll(){
 // ---- KPI ----
 function buildKPI(){
   let overdue=0,critical=0,soon=0,ok=0,diagUrgent=0,total=vehicles.length;
-  vehicles.forEach(v=>{
+  vehicles.filter(v => !(v.fn||'').toUpperCase().includes('FINANCE')).forEach(v=>{
     const c=oilStatus(v).cat;
     if(c==='overdue') overdue++;
     else if(c==='critical') critical++;
@@ -944,7 +944,7 @@ function buildZoneBars(){
 
 // ---- TOP 10 OIL ----
 function buildOilUrgent(){
-  const sorted=[...vehicles].filter(v=>v.currentKm!==null).map(v=>({...v,rem:oilRemaining(v)})).sort((a,b)=>a.rem-b.rem).slice(0,10);
+  const sorted=[...vehicles].filter(v=>v.currentKm!==null && !(v.fn||'').toUpperCase().includes('FINANCE')).map(v=>({...v,rem:oilRemaining(v)})).sort((a,b)=>a.rem-b.rem).slice(0,10);
   document.getElementById('oilUrgent').innerHTML=sorted.map(v=>{
     const s=oilStatus(v);
     return `<div class="m-item" onclick="openOilModal('${v.id}')">
@@ -966,6 +966,7 @@ function filterOil(f,el){ oilFilter=f; document.querySelectorAll('#oilFilters .f
 function renderOil(){
   const q=(document.getElementById('oilSearch').value||'').toLowerCase();
   const rows=vehicles.filter(v=>{
+    if((v.fn||'').toUpperCase().includes('FINANCE')) return false;
     if(oilFilter!=='all'&&oilStatus(v).cat!==oilFilter) return false;
     if(q && !`${v.id} ${v.fn}`.toLowerCase().includes(q)) return false;
     return true;
@@ -1180,7 +1181,7 @@ function renderSchedCal(){
   const el = document.getElementById('schedCalView');
   if(!el) return;
   const y = schedCalDate.getFullYear(), m = schedCalDate.getMonth();
-  const monthName = schedCalDate.toLocaleDateString('fr-MA',{month:'long',year:'numeric'});
+  const monthName = schedCalDate.toLocaleDateString('en-GB',{month:'long',year:'numeric'});
   const firstDay = new Date(y, m, 1).getDay(); // 0=Sun
   const daysInMonth = new Date(y, m+1, 0).getDate();
   const today = new Date(); today.setHours(0,0,0,0);
@@ -1204,16 +1205,16 @@ function renderSchedCal(){
     'Other':`background:var(--bg);color:var(--t2);border-color:var(--bd)`
   };
   maintenance.forEach(r => {
-    const raw = r[0]; // timestamp column
+    const raw = r[0] || r['Timestamp'] || r['timestamp'] || '';
     if(!raw) return;
-    const match = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+    const match = String(raw).match(/^(\d{2})\/(\d{2})\/(\d{4})/);
     if(!match) return;
     const key = `${match[3]}-${match[2]}-${match[1]}`;
     if(!evByDay[key]) evByDay[key] = [];
     evByDay[key].push(r);
   });
 
-  const days = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
+  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   let cells = '';
   // Leading blanks
   for(let i=0;i<firstDay;i++) cells += `<div class="sched-cal-day other-month"></div>`;
@@ -1222,9 +1223,10 @@ function renderSchedCal(){
     const isToday = new Date(y,m,d).getTime() === today.getTime();
     const evs = evByDay[key] || [];
     const evHtml = evs.slice(0,3).map(r => {
-      const type = r[2]||'Other';
+      const type = r[2] || r['Type'] || 'Other';
+      const vid  = r[1] || r['Vehicle ID'] || '?';
       const style = typeStyle[type]||typeStyle['Other'];
-      return `<div class="sched-cal-event" style="${style}" title="${r[1]||''} — ${type}">${r[1]||'?'}</div>`;
+      return `<div class="sched-cal-event" style="${style}" title="${vid} — ${type}">${vid}</div>`;
     }).join('') + (evs.length>3?`<div style="font-size:9px;color:var(--t3)">+${evs.length-3} more</div>`:'');
     cells += `<div class="sched-cal-day${isToday?' today':''}">
       <div class="sched-cal-daynum">${d}</div>${evHtml}</div>`;
@@ -1488,10 +1490,16 @@ function buildAppUsage(){
   // Unique vehicles scanned in this period
   const scannedIds = new Set(scansInRange.map(c => String(c.vehicleId).trim()));
 
-  // All fleet vehicle IDs
-  const allIds = vehicles.map(v => v.id);
+  // Exclude DOWN vehicles from app usage entirely
+  const appFleet = vehicles.filter(v => {
+    const zone = (v.fn || '').split(' ')[0].toUpperCase();
+    const fn   = (v.fn || '').toUpperCase();
+    return zone !== 'DOWN' && !fn.includes('FINANCE');
+  });
+  const allIds = appFleet.map(v => String(v.id).trim());
   const total  = allIds.length;
-  const scanned = allIds.filter(id => scannedIds.has(id)).length;
+  const scannedIds2 = new Set([...scannedIds].map(x => x.toUpperCase()));
+  const scanned = allIds.filter(id => scannedIds2.has(id.toUpperCase())).length;
   const pct = total > 0 ? Math.round(scanned / total * 100) : 0;
 
   // Update KPI card
@@ -1559,7 +1567,7 @@ function buildAppUsage(){
                  String(now.getDate()).padStart(2,'0');
       const isToday = key === todayKey;
       const barColor = count === 0 ? '#E0DDD6' : isToday ? '#0047AB' : '#7BA4E0';
-      const dayLabel = d.toLocaleDateString('fr-MA', {weekday:'short',day:'2-digit'}).replace(' ','<br>');
+      const dayLabel = d.toLocaleDateString('en-GB', {weekday:'short',day:'2-digit'}).replace(' ','<br>');
       return `<div class="usage-day-col">
         <div class="usage-day-pct" style="color:${count===0?'var(--t3)':barColor}">${count===0?'—':Math.round((uniqueByDay[key]?.size||0)/total*100)+'%'}</div>
         <div class="usage-day-cnt" style="color:var(--t3)">${count||''}</div>
@@ -1572,7 +1580,7 @@ function buildAppUsage(){
   }
 
   // --- Not scanned by zone ---
-  const notScanned = vehicles.filter(v => !scannedIds.has(v.id));
+  const notScanned = appFleet.filter(v => !scannedIds2.has(String(v.id).trim().toUpperCase()));
   // Group by zone prefix (first word of Function field)
   const byZone = {};
   notScanned.forEach(v => {

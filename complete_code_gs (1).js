@@ -160,21 +160,18 @@ function getDailyChecks_() {
   if (!sh) return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true, data: [] })));
   var data = sh.getDataRange().getValues();
   if (data.length < 2) return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true, data: [] })));
-
-  // Only return rows from 2026 onwards — avoids sending years of history on every sync
-  var cutoff = new Date('2026-01-01T00:00:00');
-
+  // Return cols A (Timestamp), B (Driver ID), C (Vehicle ID) — skip header row
   var rows = data.slice(1).map(function(row) {
     var ts = row[0];
-    if (!(ts instanceof Date)) return null;          // skip blank/malformed rows
-    if (ts < cutoff) return null;                    // skip pre-2026
+    if (ts instanceof Date) {
+      ts = Utilities.formatDate(ts, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+    }
     return {
-      timestamp: Utilities.formatDate(ts, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss'),
+      timestamp: ts,
       driverId:  String(row[1] || ''),
       vehicleId: String(row[2] || '')
     };
-  }).filter(function(r) { return r && r.vehicleId !== ''; });
-
+  }).filter(function(r) { return r.vehicleId !== ''; });
   return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true, data: rows })));
 }
 

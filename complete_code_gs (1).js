@@ -161,18 +161,22 @@ function getDailyChecks_() {
   if (!sh) return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true, data: [] })));
   var data = sh.getDataRange().getValues();
   if (data.length < 2) return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true, data: [] })));
-  // Return cols A (Timestamp), B (Driver ID), C (Vehicle ID) — skip header row
-  var rows = data.slice(1).map(function(row) {
-    var ts = row[0];
-    if (ts instanceof Date) {
-      ts = Utilities.formatDate(ts, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
-    }
-    return {
-      timestamp: ts,
-      driverId:  String(row[1] || ''),
-      vehicleId: String(row[2] || '')
-    };
+  
+  // Cutoff set to January 1st, 2026
+  var cutoff = new Date('2026-01-01T00:00:00');  
+  
+  var rows = data.slice(1).filter(function(row) {    
+    var ts = row[0];    
+    return ts instanceof Date && ts >= cutoff;  
+  }).map(function(row) {    
+    var ts = Utilities.formatDate(row[0], Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');    
+    return {      
+      timestamp: ts,      
+      driverId:  String(row[1] || ''),      
+      vehicleId: String(row[2] || '')    
+    };  
   }).filter(function(r) { return r.vehicleId !== ''; });
+
   return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true, data: rows })));
 }
 

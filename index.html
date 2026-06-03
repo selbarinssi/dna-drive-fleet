@@ -1385,7 +1385,7 @@ async function saveAdd(){
   if(!id){ toast('Vehicle ID is required', 'err'); return; }
 
   // Check for duplicate ID
-  if(vehicles.find(v => v.id === id)){
+  if(vehicles.find(x => x.id === id)){
     toast('Vehicle ID #'+id+' already exists', 'err');
     return;
   }

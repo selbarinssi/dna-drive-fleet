@@ -6,7 +6,7 @@
 <title>D&A Drive — Fleet Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
+*{box-sizing:border-box;margin:0;padding:0;font-family:inherit}
 :root{
   --blue:#0047AB;--blue-d:#003380;--blue-l:#e8f0fb;--blue-m:#1a5fd4;
   --yellow:#FFD600;--yellow-d:#C9AA00;
@@ -372,7 +372,7 @@ select.form-input{cursor:pointer}
     <button class="fbtn" onclick="filterOil('ok',this)">🟢 OK</button>
   </div>
   <div class="row-tools">
-    <input class="srch" type="text" id="oilSearch" placeholder="Filter by vehicle ID or zone…" oninput="renderOil()">
+    <input class="srch" type="text" id="oilSearch" placeholder="Search ID, Zone, Model…" oninput="renderOil()">
     <span class="count-lbl" id="oilCount"></span>
   </div>
   <div class="tbl-wrap">
@@ -426,6 +426,10 @@ select.form-input{cursor:pointer}
     <button class="fbtn" onclick="filterDiag('month1',this)">🟠 &lt;1 month</button>
     <button class="fbtn" onclick="filterDiag('month3',this)">🟡 &lt;3 months</button>
     <button class="fbtn" onclick="filterDiag('ok',this)">🟢 OK</button>
+  </div>
+  <div class="row-tools">
+    <input class="srch" type="text" id="diagSearch" placeholder="Search ID, Zone, Model…" oninput="renderDiag()">
+    <span class="count-lbl" id="diagCount"></span>
   </div>
   <div class="tbl-wrap">
     <table class="tbl">
@@ -1009,7 +1013,7 @@ function renderOil(){
   const rows=vehicles.filter(v=>{
     if((v.fn||'').toUpperCase().includes('FINANCE')) return false;
     if(oilFilter!=='all'&&oilStatus(v).cat!==oilFilter) return false;
-    if(q && !`${v.id} ${v.fn}`.toLowerCase().includes(q)) return false;
+    if(q && !`${v.id} ${v.fn} ${v.model}`.toLowerCase().includes(q)) return false;
     return true;
   }).sort((a,b)=>(oilRemaining(a)??9e9)-(oilRemaining(b)??9e9));
   document.getElementById('oilCount').textContent=rows.length+' vehicle(s)';
@@ -1065,18 +1069,19 @@ function renderFleet(){
 // ---- DIAG TABLE ----
 function filterDiag(f,el){ diagFilter=f; document.querySelectorAll('#diagFilters .fbtn').forEach(b=>b.classList.remove('active')); el.classList.add('active'); renderDiag(); }
 function renderDiag(){
+  const q=(document.getElementById('diagSearch').value||'').toLowerCase();
   const rows = vehicles.filter(v => {
-    // If a specific filter button is active, run the timeframe checks
     if (diagFilter !== 'all') {
       const days = daysUntil(v.diagExpiry) ?? 9999;
-      
-      if (diagFilter === 'overdue' && days > 0) return false;          // 🔴 Overdue (days <= 0)
-      if (diagFilter === 'month1' && (days <= 0 || days > 30)) return false;  // 🟠 <1 month (1 to 30 days)
-      if (diagFilter === 'month3' && (days <= 0 || days > 90)) return false;  // 🟡 <3 months (1 to 90 days)
-      if (diagFilter === 'ok' && days <= 0) return false;              // 🟢 OK (days > 0)
+      if (diagFilter === 'overdue' && days > 0) return false;
+      if (diagFilter === 'month1' && (days <= 0 || days > 30)) return false;
+      if (diagFilter === 'month3' && (days <= 0 || days > 90)) return false;
+      if (diagFilter === 'ok' && days <= 0) return false;
     }
+    if(q && !`${v.id} ${v.fn} ${v.model}`.toLowerCase().includes(q)) return false;
     return true;
   }).sort((a,b)=>(daysUntil(a.diagExpiry)??9999)-(daysUntil(b.diagExpiry)??9999));
+  document.getElementById('diagCount').textContent = rows.length + ' vehicle(s)';
   document.getElementById('diagTbody').innerHTML=rows.map(v=>{
     const s=diagStatus(v); const d=daysUntil(v.diagExpiry);
     const dColor=d!==null&&d<0?'var(--danger)':d!==null&&d<=30?'var(--warn)':'var(--t1)';

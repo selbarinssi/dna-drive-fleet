@@ -282,14 +282,11 @@ function updateVehicle_(payload) {
 function logOilChange_(payload) {
   var km        = Number(payload.currentKm);
   var nextOilKm = km + 15000;
-  var today     = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy');
   updateVehicle_({
     vehicleId: payload.vehicleId,
     fields: {
-      'Mileage':         km,
       'Last Oil Change': km,
-      'Next Oil Change': nextOilKm,
-      'Last Check':      today
+      'Next Oil Change': nextOilKm
     },
     user: payload.user,
     note: 'Oil change logged'
@@ -297,7 +294,7 @@ function logOilChange_(payload) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName(SHEET_MAINTENANCE);
   if (sh) {
-    sh.appendRow([new Date(), payload.vehicleId, 'Oil Change', km, payload.user || 'Unknown', payload.note || '', 'Pending']);
+    sh.appendRow([new Date(), payload.vehicleId, 'Oil Change', km, payload.user || 'Unknown', payload.note || '', 'Pending', payload.interventionDate || '']);
   }
   return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true })));
 }
@@ -312,7 +309,7 @@ function logDiagnostic_(payload) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName(SHEET_MAINTENANCE);
   if (sh) {
-    sh.appendRow([new Date(), payload.vehicleId, 'Annual Diagnostic', '', payload.user || 'Unknown', 'New expiry: ' + payload.newExpiryDate, 'Pending']);
+    sh.appendRow([new Date(), payload.vehicleId, 'Annual Diagnostic', '', payload.user || 'Unknown', 'New expiry: ' + payload.newExpiryDate, 'Pending', payload.interventionDate || '']);
   }
   return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true })));
 }
@@ -326,12 +323,13 @@ function logMaintenance_(payload) {
     var eventDate = payload.scheduledDate || new Date();
     msh.appendRow([
       eventDate,
-      payload.vehicleId    || '',
-      payload.type         || 'General',
-      payload.km           || '',
-      payload.user         || 'Unknown',
-      payload.note         || '',
-      'Pending'
+      payload.vehicleId        || '',
+      payload.type             || 'General',
+      payload.km               || '',
+      payload.user             || 'Unknown',
+      payload.note             || '',
+      'Pending',
+      payload.interventionDate || ''
     ]);
   }
 

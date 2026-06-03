@@ -536,8 +536,12 @@ select.form-input{cursor:pointer}
           <div class="form-hint" id="oil-hint"></div>
         </div>
         <div class="form-field">
+          <label class="form-label">Date of intervention</label>
+          <input class="form-input" type="date" id="oil-intdate">
+        </div>
+        <div class="form-field">
           <label class="form-label">Notes (optional)</label>
-          <input class="form-input" id="oil-note" placeholder="Filter by vehicle ID or zone…">
+          <input class="form-input" id="oil-note" placeholder="e.g. Changed at garage Maarif">
         </div>
       </div>
     </div>
@@ -563,6 +567,10 @@ select.form-input{cursor:pointer}
         <div class="form-field">
           <label class="form-label">New expiry date</label>
           <input class="form-input" id="diag-date" placeholder="DD/MM/YYYY">
+        </div>
+        <div class="form-field">
+          <label class="form-label">Date of intervention</label>
+          <input class="form-input" type="date" id="diag-intdate">
         </div>
         <div class="form-field">
           <label class="form-label">Notes (optional)</label>
@@ -1146,7 +1154,7 @@ function renderSchedule(){
     const status = l['Status'] || 'Pending';
     const isDone = status === 'Done';
     return `<tr style="${isDone ? 'opacity:0.6' : ''}">
-      <td style="font-size:11px;color:var(--t3);white-space:nowrap">${l['Timestamp'] || '—'}</td>
+      <td style="font-size:11px;color:var(--t3);white-space:nowrap">${(l['Intervention Date'] || l['Timestamp'] || '—').split(' ')[0]}</td>
       <td>
         <strong>${l['Vehicle ID'] || '—'}</strong>
         ${(()=>{ const v = vehicles.find(x => x.id === l['Vehicle ID']); return v ? `<span style="font-size:11px;color:var(--t3);margin-left:4px">${v.model}</span>` : ''; })()}
@@ -1258,7 +1266,7 @@ function renderSchedCal(){
     'Other':`background:var(--bg);color:var(--t2);border-color:var(--bd)`
   };
   maintenance.forEach(r => {
-    const raw = r[0] || r['Timestamp'] || r['timestamp'] || '';
+    const raw = r['Intervention Date'] || r[0] || r['Timestamp'] || r['timestamp'] || '';
     if(!raw) return;
     const match = String(raw).match(/^(\d{2})\/(\d{2})\/(\d{4})/);
     if(!match) return;
@@ -1435,16 +1443,22 @@ function openOilModal(id){
   document.getElementById('oil-km').value=v.currentKm||'';
   document.getElementById('oil-hint').textContent=v.lastOilKm?'Last oil change at '+v.lastOilKm.toLocaleString()+' km. Next will be set at '+(v.lastOilKm+OIL_INTERVAL).toLocaleString()+' km.':'No previous oil change recorded.';
   document.getElementById('oil-note').value='';
+  document.getElementById('oil-intdate').value=new Date().toISOString().slice(0,10);
   openModal('oilOverlay');
 }
 async function saveOilChange(){
   const km=Number(document.getElementById('oil-km').value);
   if(!km||km<0){ toast('Enter a valid mileage','err'); return; }
-  const res = await postAction({action:'logOilChange', vehicleId:activeVehicleId, currentKm:km, user:getUser(), note:document.getElementById('oil-note').value});
+  const rawDate = document.getElementById('oil-intdate').value;
+  const interventionDate = rawDate ? rawDate.split('-').reverse().join('/') : '';
+  const res = await postAction({action:'logOilChange', vehicleId:activeVehicleId, currentKm:km, user:getUser(), note:document.getElementById('oil-note').value, interventionDate});
   if(!res) return;
   closeModal('oilOverlay');
   const v = getV(activeVehicleId);
-  if(v){ v.currentKm = km; v.lastOilKm = km; v.nextOilKm = km + OIL_INTERVAL; }
+  if(v){ v.lastOilKm = km; v.nextOilKm = km + OIL_INTERVAL; }
+  const intDateVal = document.getElementById('oil-intdate').value;
+  const intDateFmt = intDateVal ? intDateVal.split('-').reverse().join('/') : '';
+  maintenance.push({ _row:99999, 'Timestamp': new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}), 'Vehicle ID': activeVehicleId, 'Type':'Oil Change', 'KM at service': km, 'User': getUser(), 'Notes': document.getElementById('oil-note').value, 'Status':'Pending', 'Intervention Date': intDateFmt });
   rebuildAll();
   toast('Oil change logged for #'+activeVehicleId,'ok');
 }
@@ -1455,16 +1469,20 @@ function openDiagModal(id){
   document.getElementById('diagModalSub').textContent=v.id+' — '+v.model+' · '+v.fn;
   document.getElementById('diag-date').value='';
   document.getElementById('diag-note').value='';
+  document.getElementById('diag-intdate').value=new Date().toISOString().slice(0,10);
   openModal('diagOverlay');
 }
 async function saveDiag(){
   const dt=document.getElementById('diag-date').value.trim();
   if(!dt){ toast('Enter a valid date (DD/MM/YYYY)','err'); return; }
-  const res = await postAction({action:'logDiagnostic', vehicleId:activeVehicleId, newExpiryDate:dt, user:getUser(), note:document.getElementById('diag-note').value});
+  const rawDiagDate = document.getElementById('diag-intdate').value;
+  const interventionDate = rawDiagDate ? rawDiagDate.split('-').reverse().join('/') : '';
+  const res = await postAction({action:'logDiagnostic', vehicleId:activeVehicleId, newExpiryDate:dt, user:getUser(), note:document.getElementById('diag-note').value, interventionDate});
   if(!res) return;
   closeModal('diagOverlay');
   const v = getV(activeVehicleId);
   if(v){ v.diagExpiry = dt; }
+  maintenance.push({ _row:99999, 'Timestamp': new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}), 'Vehicle ID': activeVehicleId, 'Type':'Annual Diagnostic', 'KM at service':'', 'User': getUser(), 'Notes':'New expiry: '+dt, 'Status':'Pending', 'Intervention Date': interventionDate });
   rebuildAll();
   toast('Diagnostic renewed for #'+activeVehicleId,'ok');
 }

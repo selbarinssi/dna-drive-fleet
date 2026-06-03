@@ -1347,7 +1347,6 @@ async function saveEdit(){
     'Rent Mileage':document.getElementById('ef-rentmile').value,
   };
   // Remove unchanged fields
-  const v=getV(id);
   const res = await postAction({action:'updateVehicle', vehicleId:id, fields, user:getUser(), note:document.getElementById('ef-notes').value});
   if(!res) return;
   closeModal('editOverlay');

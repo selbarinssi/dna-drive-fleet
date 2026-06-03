@@ -15,6 +15,7 @@ function doGet(e) {
   
   // 1. READ ONLY actions that anyone can see (if you want the public to view dashboards)
   if (action === 'getVehicles') return getVehicles_();
+  if (action === 'getAll')      return getAll_();
   if (action === 'getLogs')     return getLogs_();
   if (action === 'getMaintenanceLog') return getMaintenanceLog_();
   if (action === 'getDailyChecks')    return getDailyChecks_();
@@ -113,6 +114,69 @@ function getVehicles_() {
   })));
 }
 
+function getAll_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // Vehicles
+  var vSh = ss.getSheetByName(SHEET_VEHICLES);
+  var vData = vSh.getDataRange().getValues();
+  var vHeaders = vData[0];
+  var vehicles = vData.slice(1).map(function(row) {
+    var obj = {};
+    vHeaders.forEach(function(h, i) {
+      var v = row[i];
+      if (v instanceof Date) v = Utilities.formatDate(v, Session.getScriptTimeZone(), 'dd/MM/yyyy');
+      obj[h] = v;
+    });
+    return obj;
+  });
+
+  // Maintenance
+  var mSh = ss.getSheetByName(SHEET_MAINTENANCE);
+  var maintenance = [];
+  if (mSh) {
+    var mData = mSh.getDataRange().getValues();
+    if (mData.length >= 2) {
+      var mHeaders = mData[0];
+      maintenance = mData.slice(1).map(function(row, i) {
+        var obj = { _row: i + 2 };
+        mHeaders.forEach(function(h, j) {
+          var v = row[j];
+          if (v instanceof Date) v = Utilities.formatDate(v, Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm');
+          obj[h] = v;
+        });
+        return obj;
+      });
+    }
+  }
+
+  // Daily Checks (2026+ only)
+  var dSh = ss.getSheetByName(SHEET_DAILY);
+  var dailyChecks = [];
+  if (dSh) {
+    var dData = dSh.getDataRange().getValues();
+    if (dData.length >= 2) {
+      var cutoff = new Date('2026-01-01T00:00:00');
+      dailyChecks = dData.slice(1).filter(function(row) {
+        return row[0] instanceof Date && row[0] >= cutoff;
+      }).map(function(row) {
+        return {
+          timestamp: Utilities.formatDate(row[0], Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss'),
+          driverId:  String(row[1] || ''),
+          vehicleId: String(row[2] || '')
+        };
+      }).filter(function(r) { return r.vehicleId !== ''; });
+    }
+  }
+
+  return cors_(ContentService.createTextOutput(JSON.stringify({
+    ok: true,
+    lastModified: new Date().toISOString(),
+    vehicles:     vehicles,
+    maintenance:  maintenance,
+    dailyChecks:  dailyChecks
+  })));
+}
 function getLogs_() {
   var ss   = SpreadsheetApp.getActiveSpreadsheet();
   var sh   = getOrCreateLogSheet_(ss);
@@ -344,10 +408,8 @@ function updateMaintenanceRow_(payload) {
   }
   // Columns: A=Timestamp(1), B=VehicleID(2), C=Type(3), D=KM(4), E=User(5), F=Notes(6), G=Status(7)
   // We allow editing B, C, D, F — never touch A (timestamp) or G (status) here
-  sheet.getRange(row, 2).setValue(payload.vehicleId  || '');
-  sheet.getRange(row, 3).setValue(payload.type       || '');
-  sheet.getRange(row, 4).setValue(payload.km         || '');
-  sheet.getRange(row, 6).setValue(payload.note       || '');
+  sheet.getRange(row, 2, 1, 3).setValues([[payload.vehicleId || '', payload.type || '', payload.km || '']]);
+  sheet.getRange(row, 6).setValue(payload.note || '');
   return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true })));
 }
 // ================================================================

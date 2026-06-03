@@ -402,7 +402,7 @@ select.form-input{cursor:pointer}
   </div>
   <div class="row-tools">
     <button class="btn btn-primary" onclick="openAddModal()">+ Add vehicle</button>
-    <input class="srch" type="text" id="fleetSearch" placeholder="Filter by vehicle ID or zone…" oninput="renderFleet()">
+    <input class="srch" type="text" id="fleetSearch" placeholder="Search ID, Zone, Model…" oninput="renderFleet()">
     <span class="count-lbl" id="fleetCount"></span>
   </div>
   <div class="tbl-wrap">
@@ -825,17 +825,14 @@ function setSyncState(state, msg){
 async function fetchData(manual) {
   if (manual) setSyncState('stale', 'Refreshing…');
   try {
-    const [vRes, mRes, dRes] = await Promise.all([
-      fetch(API_URL + '?action=getVehicles&t='        + Date.now(), { redirect:'follow', mode:'cors' }),
-      fetch(API_URL + '?action=getMaintenanceLog&t='  + Date.now(), { redirect:'follow', mode:'cors' }),
-      fetch(API_URL + '?action=getDailyChecks&t='     + Date.now(), { redirect:'follow', mode:'cors' })
-    ]);
-    const vData = await vRes.json();
-    const mData = await mRes.json();
-    const dData = await dRes.json();
-    if(vData.ok){ vehicles = vData.data.map(mapVehicle); lastModified = vData.lastModified; }
-    if(mData.ok){ maintenance = mData.data; }
-    if(dData.ok){ dailyChecks = dData.data; }
+    const res  = await fetch(API_URL + '?action=getAll&t=' + Date.now(), { redirect:'follow', mode:'cors' });
+    const data = await res.json();
+    if (data.ok) {
+      vehicles     = data.vehicles.map(mapVehicle);
+      maintenance  = data.maintenance;
+      dailyChecks  = data.dailyChecks;
+      lastModified = data.lastModified;
+    }
     document.getElementById('loadingOverlay').style.display = 'none';
     setSyncState('ok', 'Synced ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}));
     rebuildAll();
@@ -908,15 +905,22 @@ function diagStatus(v){
 
 // ---- REBUILD ALL ----
 function rebuildAll(){
-  buildKPI();
-  buildDonut();
-  buildZoneBars();
-  buildOilUrgent();
-  buildAppUsage();
-  renderOil();
-  renderFleet();
-  renderDiag();
-  renderSchedule();
+  buildKPI();           // always — Overview KPIs and alerts
+  buildDonut();         // always — Overview chart
+  buildZoneBars();      // always — Overview chart
+  buildOilUrgent();     // always — Overview top 10
+  buildAppUsage();      // always — Overview app usage section
+  renderActiveTab();    // only the visible tab
+}
+
+function renderActiveTab(){
+  const active = document.querySelector('.page.active');
+  if (!active) return;
+  const id = active.id;
+  if (id === 'page-fleet')    renderFleet();
+  if (id === 'page-oil')      renderOil();
+  if (id === 'page-diag')     renderDiag();
+  if (id === 'page-schedule') renderSchedule();
 }
 
 // ---- KPI ----
@@ -1032,7 +1036,7 @@ function renderFleet(){
   const q=(document.getElementById('fleetSearch').value||'').toLowerCase();
   const rows=vehicles.filter(v=>{
     if(fleetFilter!=='all'&&!v.fn.includes(fleetFilter)) return false;
-    if(q && !`${v.id} ${v.fn}`.toLowerCase().includes(q)) return false;
+    if(q && !`${v.id} ${v.fn} ${v.model}`.toLowerCase().includes(q)) return false;
     return true;
   });
   document.getElementById('fleetCount').textContent=rows.length+' vehicle(s)';
@@ -1165,7 +1169,9 @@ async function markDone(row){
   
   // Only show success and refresh if the server actually allowed it
   if (res && res.ok) {
-    await fetchData(false);
+    const entry = maintenance.find(m => m._row === row);
+    if(entry) entry['Status'] = 'Done';
+    renderSchedule();
     toast('Marked as done', 'ok');
   }
 }
@@ -1176,8 +1182,10 @@ async function deleteSchedule(row) {
   const res = await postAction({ action: 'deleteMaintenanceRow', row: row, user: getUser() });
   
   if (res && res.ok) {
+    maintenance = maintenance.filter(m => m._row !== row);
+    renderSchedule();
+    setSyncState('ok', 'Synced');
     toast('Intervention deleted successfully', 'ok');
-    await fetchData(false); // Force a clean reload from the sheet immediately
   } else {
     toast('Failed to delete row', 'err');
     setSyncState('ok', 'Synced');
@@ -1197,8 +1205,10 @@ async function updateNoteColumn(row, newText) {
   });
   
   if (res && res.ok) {
+    const entry = maintenance.find(m => m._row === row);
+    if(entry) entry['Notes'] = cleanText;
     toast('Notes updated', 'ok');
-    await fetchData(false); // Reload state
+    setSyncState('ok', 'Synced');
   } else {
     toast('Failed to update notes', 'err');
     setSyncState('ok', 'Synced');
@@ -1338,9 +1348,28 @@ async function saveEdit(){
   };
   // Remove unchanged fields
   const v=getV(id);
-  await postAction({action:'updateVehicle', vehicleId:id, fields, user:getUser(), note:document.getElementById('ef-notes').value});
+  const res = await postAction({action:'updateVehicle', vehicleId:id, fields, user:getUser(), note:document.getElementById('ef-notes').value});
+  if(!res) return;
   closeModal('editOverlay');
-  await fetchData(false);
+  const v = getV(id);
+  if(v){
+    v.originId  = fields['Origin ID']        ?? v.originId;
+    v.model     = fields['Model']             ?? v.model;
+    v.fn        = fields['Function']          ?? v.fn;
+    v.chassis   = fields['Chassis']           ?? v.chassis;
+    v.owner     = fields['Owner']             ?? v.owner;
+    v.currentKm = fields['Mileage']    !== '' ? Number(fields['Mileage'])    : v.currentKm;
+    v.lastOilKm = fields['Last Oil Change'] !== '' ? Number(fields['Last Oil Change']) : v.lastOilKm;
+    v.diagExpiry= fields['Annual Diagnostic'] ?? v.diagExpiry;
+    v.regExpiry = fields['Regist Exp']        ?? v.regExpiry;
+    v.fuelCard  = fields['Fuel Card']         ?? v.fuelCard;
+    v.pin       = fields['PIN']               ?? v.pin;
+    v.jawaz     = fields['Jawaz']             ?? v.jawaz;
+    v.tyreRef   = fields['Tyres Reference']   ?? v.tyreRef;
+    v.tyreBrand = fields['Tyres Brand']       ?? v.tyreBrand;
+    v.rentMile  = fields['Rent Mileage'] !== '' ? Number(fields['Rent Mileage']) : v.rentMile;
+  }
+  rebuildAll();
   toast('Vehicle '+id+' updated', 'ok');
 }
 function openAddModal(){
@@ -1388,9 +1417,11 @@ async function saveAdd(){
     'Last Check':        '',
   };
 
-  await postAction({ action: 'addVehicle', fields, user: getUser(), note: document.getElementById('af-notes').value });
+  const resAdd = await postAction({ action: 'addVehicle', fields, user: getUser(), note: document.getElementById('af-notes').value });
+  if(!resAdd) return;
   closeModal('addOverlay');
-  await fetchData(false);
+  vehicles.push(mapVehicle(fields));
+  rebuildAll();
   toast('Vehicle '+id+' added', 'ok');
 }
 function openOilModal(id){
@@ -1405,9 +1436,12 @@ function openOilModal(id){
 async function saveOilChange(){
   const km=Number(document.getElementById('oil-km').value);
   if(!km||km<0){ toast('Enter a valid mileage','err'); return; }
-  await postAction({action:'logOilChange', vehicleId:activeVehicleId, currentKm:km, user:getUser(), note:document.getElementById('oil-note').value});
+  const res = await postAction({action:'logOilChange', vehicleId:activeVehicleId, currentKm:km, user:getUser(), note:document.getElementById('oil-note').value});
+  if(!res) return;
   closeModal('oilOverlay');
-  await fetchData(false);
+  const v = getV(activeVehicleId);
+  if(v){ v.currentKm = km; v.lastOilKm = km; v.nextOilKm = km + OIL_INTERVAL; }
+  rebuildAll();
   toast('Oil change logged for #'+activeVehicleId,'ok');
 }
 
@@ -1422,9 +1456,12 @@ function openDiagModal(id){
 async function saveDiag(){
   const dt=document.getElementById('diag-date').value.trim();
   if(!dt){ toast('Enter a valid date (DD/MM/YYYY)','err'); return; }
-  await postAction({action:'logDiagnostic', vehicleId:activeVehicleId, newExpiryDate:dt, user:getUser(), note:document.getElementById('diag-note').value});
+  const res = await postAction({action:'logDiagnostic', vehicleId:activeVehicleId, newExpiryDate:dt, user:getUser(), note:document.getElementById('diag-note').value});
+  if(!res) return;
   closeModal('diagOverlay');
-  await fetchData(false);
+  const v = getV(activeVehicleId);
+  if(v){ v.diagExpiry = dt; }
+  rebuildAll();
   toast('Diagnostic renewed for #'+activeVehicleId,'ok');
 }
 
@@ -1446,7 +1483,17 @@ async function saveSchedule(){
   });
   document.getElementById('sf-km').value = '';
   closeModal('schedOverlay');
-  await fetchData(false);
+  maintenance.push({
+    _row: 99999,
+    'Timestamp':     new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'}).replace(/\//g,'/') + ' ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}),
+    'Vehicle ID':    document.getElementById('sc-id').value.trim(),
+    'Type':          document.getElementById('sc-type').value,
+    'KM at service': document.getElementById('sf-km').value ? Number(document.getElementById('sf-km').value) : '',
+    'User':          getUser(),
+    'Notes':         document.getElementById('sc-note').value,
+    'Status':        'Pending'
+  });
+  renderSchedule();
   toast('Intervention scheduled','ok');
 }
 let activeSchedRow = null;
@@ -1474,7 +1521,14 @@ async function saveEditSchedule() {
   });
   if (res && res.ok) {
     closeModal('editSchedOverlay');
-    await fetchData(false);
+    const entry = maintenance.find(m => m._row === activeSchedRow);
+    if(entry){
+      entry['Vehicle ID']    = document.getElementById('es-id').value.trim();
+      entry['Type']          = document.getElementById('es-type').value;
+      entry['KM at service'] = document.getElementById('es-km').value ? Number(document.getElementById('es-km').value) : '';
+      entry['Notes']         = document.getElementById('es-note').value;
+    }
+    renderSchedule();
     toast('Intervention updated', 'ok');
   }
 }
@@ -1733,6 +1787,7 @@ function showPage(name,el){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('page-'+name).classList.add('active');
   el.classList.add('active');
+  renderActiveTab();
 }
 
 // ---- INIT ----

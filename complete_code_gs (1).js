@@ -259,8 +259,9 @@ function logMaintenance_(payload) {
   // Maintenance sheet — history shown on dashboard
   var msh = ss.getSheetByName(SHEET_MAINTENANCE);
   if (msh) {
+    var eventDate = payload.scheduledDate || new Date();
     msh.appendRow([
-      new Date(),
+      eventDate,
       payload.vehicleId    || '',
       payload.type         || 'General',
       payload.km           || '',

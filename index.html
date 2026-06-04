@@ -224,7 +224,21 @@ select.form-input{cursor:pointer}
 .sched-cal-day.other-month{background:var(--bg);opacity:.5}
 .sched-cal-day.today{outline:2px solid var(--blue);outline-offset:-2px}
 .sched-cal-daynum{font-size:11px;font-weight:600;color:var(--t2);margin-bottom:4px}
-.sched-cal-event{font-size:10px;padding:2px 5px;border-radius:3px;margin-bottom:2px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border:1px solid transparent}
+.sched-cal-event{font-size:10px;padding:2px 5px;border-radius:3px;border:1px solid;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:default}
+.cal-more-btn{font-size:9px;color:var(--blue);cursor:pointer;padding:1px 4px;border-radius:3px;background:var(--blue-l);display:inline-block;margin-top:1px}
+.cal-more-btn:hover{background:var(--blue);color:#fff}
+.clickable-day{cursor:pointer}
+.clickable-day:hover{background:var(--blue-l)!important}
+/* DAY PANEL */
+#dayPanel{position:fixed;top:0;right:-340px;width:320px;height:100vh;background:var(--white);border-left:1px solid var(--bd);box-shadow:-4px 0 20px rgba(0,0,0,.1);z-index:300;transition:right .2s ease;overflow-y:auto;padding:0}
+#dayPanel.open{right:0}
+.day-panel-hdr{padding:16px 20px;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--white);z-index:1}
+.day-panel-title{font-size:13px;font-weight:600}
+.day-panel-close{background:none;border:none;font-size:20px;cursor:pointer;color:var(--t3);line-height:1;padding:4px}
+.day-panel-body{padding:12px 16px;display:flex;flex-direction:column;gap:8px}
+.day-panel-card{padding:10px 12px;border-radius:var(--r);border:1px solid var(--bd);background:var(--bg)}
+.day-panel-card-title{font-size:12px;font-weight:600;margin-bottom:4px}
+.day-panel-card-meta{font-size:11px;color:var(--t2);display:flex;flex-direction:column;gap:2px}
 .sched-cal-event:hover{opacity:.8}
 .sched-cal-nav{display:flex;align-items:center;gap:10px;margin-bottom:10px}
 .sched-cal-nav-title{font-size:13px;font-weight:600;flex:1;text-align:center}
@@ -684,6 +698,14 @@ select.form-input{cursor:pointer}
     <button onclick="continueAsGuest()" style="width: 100%; background: transparent; color: var(--t2); padding: 10px; border: 1px solid var(--bd); border-radius: 6px; cursor: pointer;">👁 View as Guest</button>
   </div>
 </div>
+<!-- DAY DETAIL PANEL -->
+<div id="dayPanel">
+  <div class="day-panel-hdr">
+    <div class="day-panel-title" id="dayPanelTitle">Interventions</div>
+    <button class="day-panel-close" onclick="closeDayPanel()">×</button>
+  </div>
+  <div class="day-panel-body" id="dayPanelBody"></div>
+</div>
 <!-- USER MODAL -->
 <div class="overlay" id="userOverlay">
   <div class="modal" style="width:340px">
@@ -778,7 +800,8 @@ function continueAsGuest() {
   toast('Viewing dashboard as Guest', 'info');
 }
 // ================================================================
-const OIL_INTERVAL = 15000;
+const OIL_INTERVAL = 15000; // default km between oil changes
+function oilInterval(v){ return (v && v.model && v.model.toUpperCase().includes('IVECO TRAILER')) ? 20000 : OIL_INTERVAL; }
 const TODAY = new Date();
 
 let vehicles = [];
@@ -835,7 +858,14 @@ function setSyncState(state, msg){
 }
 
 async function fetchData(manual) {
-  if (manual) setSyncState('stale', 'Refreshing…');
+  // If manual refresh and we already have data, render immediately from memory
+  // so the UI stays responsive while the fetch runs in background
+  if (manual && vehicles.length > 0) {
+    setSyncState('stale', 'Refreshing…');
+    rebuildAll();
+  } else if (!manual) {
+    setSyncState('stale', 'Refreshing…');
+  }
   try {
     const res  = await fetch(API_URL + '?action=getAll&t=' + Date.now(), { redirect:'follow', mode:'cors' });
     const data = await res.json();
@@ -844,6 +874,10 @@ async function fetchData(manual) {
       maintenance  = data.maintenance;
       dailyChecks  = data.dailyChecks;
       lastModified = data.lastModified;
+      // Persist to sessionStorage for next page load
+      try {
+        sessionStorage.setItem('dna_cache', JSON.stringify({ vehicles: data.vehicles, maintenance: data.maintenance, dailyChecks: data.dailyChecks, lastModified: data.lastModified }));
+      } catch(_) {}
     }
     document.getElementById('loadingOverlay').style.display = 'none';
     setSyncState('ok', 'Synced ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}));
@@ -896,7 +930,7 @@ function daysUntil(str){
 }
 function oilRemaining(v){
   if(v.currentKm === null || v.lastOilKm === null) return null;
-  return (v.lastOilKm + OIL_INTERVAL) - v.currentKm;
+  return (v.lastOilKm + oilInterval(v)) - v.currentKm;
 }
 function oilStatus(v){
   const r = oilRemaining(v);
@@ -1004,7 +1038,7 @@ function buildOilUrgent(){
       <span class="badge ${s.cls}">${s.label}</span>
       <div class="m-info">
         <div class="m-veh">${v.id} — ${v.model}</div>
-        <div class="m-meta"><span class="pill">${v.fn}</span> · Last oil at ${(v.lastOilKm||0).toLocaleString()} km · Next at ${(v.lastOilKm+OIL_INTERVAL).toLocaleString()} km</div>
+        <div class="m-meta"><span class="pill">${v.fn}</span> · Last oil at ${(v.lastOilKm||0).toLocaleString()} km · Next at ${(v.lastOilKm+oilInterval(v)).toLocaleString()} km</div>
       </div>
       <div class="m-right">
         <div class="m-km" style="color:${v.rem<=0?'var(--danger)':v.rem<=2000?'var(--warn)':'var(--t1)'}">${v.rem<=0?'+'+Math.abs(v.rem).toLocaleString()+' km overdue':v.rem.toLocaleString()+' km left'}</div>
@@ -1034,7 +1068,7 @@ function renderOil(){
       <td><span class="pill">${v.fn}</span></td>
       <td class="mono">${v.currentKm!==null?v.currentKm.toLocaleString()+' km':'—'}</td>
       <td class="mono">${v.lastOilKm!==null?v.lastOilKm.toLocaleString()+' km':'—'}</td>
-      <td class="mono">${v.lastOilKm!==null?(v.lastOilKm+OIL_INTERVAL).toLocaleString()+' km':'—'}</td>
+      <td class="mono">${v.lastOilKm!==null?(v.lastOilKm+oilInterval(v)).toLocaleString()+' km':'—'}</td>
       <td class="mono" style="font-weight:600;color:${remColor}">${rem!==null?(rem<=0?'⚠ +'+Math.abs(rem).toLocaleString():rem.toLocaleString()+' km'):'—'}</td>
       <td><span class="badge ${s.cls}">${s.label}</span></td>
       <td><button class="act-btn oil" onclick="openOilModal('${v.id}')">Log oil change</button></td>
@@ -1123,7 +1157,10 @@ function renderSchedule(){
   const fromD   = fromVal ? new Date(fromVal + 'T00:00:00') : null;
   const toD     = toVal   ? new Date(toVal   + 'T23:59:59') : null;
 
-  const rows = [...maintenance].reverse().filter(l => {
+  const rows = [...maintenance].sort((a, b) => {
+    const getDate = r => { const raw = r['Intervention Date'] || r['Timestamp'] || ''; const m = String(raw).match(/^(\d{2})\/(\d{2})\/(\d{4})/); return m ? new Date(`${m[3]}-${m[2]}-${m[1]}`) : new Date(0); };
+    return getDate(b) - getDate(a);
+  }).filter(l => {
     if(schedFilter !== 'all' && l['Type'] !== schedFilter) return false;
     if(q && !`${l['Vehicle ID']}`.toLowerCase().includes(q)) return false;
     if(fromD || toD){
@@ -1291,10 +1328,9 @@ function renderSchedCal(){
       const baseStyle = isDone
         ? 'background:#f0faf4;color:#15803D;border-color:#86efac;text-decoration:line-through;opacity:.75'
         : typeStyle[type] || typeStyle['Other'];
-      const typeShort = {'Oil Change':'🛢 Oil','Annual Diagnostic':'📅 Diag','Tyres':'🔧 Tyres','Brake Service':'🛑 Brakes','General Inspection':'🔍 Insp','Other':'📌'}[type] || type;
-      return `<div class="sched-cal-event" style="${baseStyle}" title="${vid} — ${type}${isDone?' (Done)':''}">${vid} · ${typeShort}</div>`;
-    }).join('') + (evs.length>3?`<div style="font-size:9px;color:var(--t3)">+${evs.length-3} more</div>`:'');
-    cells += `<div class="sched-cal-day${isToday?' today':''}">
+      return `<div class="sched-cal-event" style="${baseStyle}" title="${vid} — ${type}${isDone?' (Done)':''}">` + vid + ' · ' + type + `</div>`;
+    }).join('') + (evs.length>3?`<div class="cal-more-btn" onclick="openDayPanel('${key}')">+${evs.length-3} more</div>`:'');
+    cells += `<div class="sched-cal-day${isToday?' today':''}${evs.length?' clickable-day':''}" ${evs.length?`onclick="openDayPanel('${key}')"`:''}>
       <div class="sched-cal-daynum">${d}</div>${evHtml}</div>`;
   }
 
@@ -1308,6 +1344,63 @@ function renderSchedCal(){
       ${days.map(d=>`<div class="sched-cal-hdr">${d}</div>`).join('')}
       ${cells}
     </div>`;
+}
+  // ---- DAY DETAIL PANEL ----
+const typeStyle2 = {
+  'Oil Change':         'background:var(--ok-bg);color:var(--ok);border-color:var(--ok-bd)',
+  'Annual Diagnostic':  'background:var(--info-bg);color:var(--info);border-color:#bfdbfe',
+  'Tyres':              'background:var(--warn-bg);color:var(--warn);border-color:var(--warn-bd)',
+  'Brake Service':      'background:var(--danger-bg);color:var(--danger);border-color:var(--danger-bd)',
+  'General Inspection': 'background:var(--blue-l);color:var(--blue);border-color:#b8d0f5',
+  'Other':              'background:var(--bg);color:var(--t2);border-color:var(--bd)'
+};
+function openDayPanel(dateKey) {
+  // dateKey = 'YYYY-MM-DD'
+  const [y, m, d] = dateKey.split('-');
+  const label = new Date(Number(y), Number(m)-1, Number(d)).toLocaleDateString('en-GB',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+  document.getElementById('dayPanelTitle').textContent = label;
+  const evs = maintenance.filter(r => {
+    const raw = r['Intervention Date'] || r['Timestamp'] || '';
+    const match = String(raw).match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+    if(!match) return false;
+    return `${match[3]}-${match[2]}-${match[1]}` === dateKey;
+  });
+  const typeColors = {'Oil Change':'b-ok','Annual Diagnostic':'b-info','Tyres':'b-warn','Brake Service':'b-danger','General Inspection':'b-gray','Other':'b-gray'};
+  document.getElementById('dayPanelBody').innerHTML = evs.length ? evs.map(r => {
+    const type   = r['Type'] || '—';
+    const vid    = r['Vehicle ID'] || '—';
+    const km     = r['KM at service'];
+    const user   = r['User'] || '—';
+    const notes  = r['Notes'] || '';
+    const status = r['Status'] || 'Pending';
+    const isDone = status === 'Done';
+    const v      = vehicles.find(x => x.id === vid);
+    const style  = isDone ? 'background:#f0faf4;color:#15803D;border-color:#86efac' : (typeStyle2[type] || typeStyle2['Other']);
+    return `<div class="day-panel-card" style="${style}">
+      <div class="day-panel-card-title">${vid}${v ? ' — '+v.model : ''} ${isDone ? '<span style="font-size:10px;opacity:.7">(Done)</span>' : ''}</div>
+      <div class="day-panel-card-meta">
+        <span><strong>Type:</strong> ${type}</span>
+        ${km ? `<span><strong>KM:</strong> ${Number(km).toLocaleString()} km</span>` : ''}
+        ${notes ? `<span><strong>Notes:</strong> ${notes}</span>` : ''}
+        <span><strong>By:</strong> ${user}</span>
+      </div>
+    </div>`;
+  }).join('') : '<div style="font-size:12px;color:var(--t3);padding:8px 0">No interventions found for this day.</div>';
+  document.getElementById('dayPanel').classList.add('open');
+}
+function closeDayPanel(){ document.getElementById('dayPanel').classList.remove('open'); }
+// ---- BUTTON LOCK HELPER ----
+function lockBtn(btn, loadingText='Saving…'){
+  btn.disabled = true;
+  btn._origText = btn.textContent;
+  btn.textContent = loadingText;
+  btn.style.opacity = '0.6';
+}
+function unlockBtn(btn){
+  if(!btn) return;
+  btn.disabled = false;
+  btn.textContent = btn._origText || 'Save';
+  btn.style.opacity = '';
 }
 // ---- MODALS ----
 function openModal(id){ document.getElementById(id).classList.add('open'); }
@@ -1341,6 +1434,8 @@ function openEditModal(id){
 }
 
 async function saveEdit(){
+  const _btn = document.querySelector('#editOverlay .btn-primary');
+  lockBtn(_btn);
   const id=document.getElementById('ef-id').value;
   const fields={
     'Origin ID': document.getElementById('ef-originid').value,
@@ -1361,7 +1456,7 @@ async function saveEdit(){
   };
   // Remove unchanged fields
   const res = await postAction({action:'updateVehicle', vehicleId:id, fields, user:getUser(), note:document.getElementById('ef-notes').value});
-  if(!res) return;
+  if(!res){ unlockBtn(_btn); return; }
   closeModal('editOverlay');
   const v = getV(id);
   if(v){
@@ -1394,6 +1489,8 @@ function openAddModal(){
 }
 
 async function saveAdd(){
+  const _btn = document.querySelector('#addOverlay .btn-primary');
+  lockBtn(_btn);
   const id = document.getElementById('af-id').value.trim();
   if(!id){ toast('Vehicle ID is required', 'err'); return; }
 
@@ -1430,7 +1527,7 @@ async function saveAdd(){
   };
 
   const resAdd = await postAction({ action: 'addVehicle', fields, user: getUser(), note: document.getElementById('af-notes').value });
-  if(!resAdd) return;
+  if(!resAdd){ unlockBtn(_btn); return; }
   closeModal('addOverlay');
   vehicles.push(mapVehicle(fields));
   rebuildAll();
@@ -1441,7 +1538,7 @@ function openOilModal(id){
   activeVehicleId=id;
   document.getElementById('oilModalSub').textContent=v.id+' — '+v.model+' · '+v.fn;
   document.getElementById('oil-km').value=v.currentKm||'';
-  document.getElementById('oil-hint').textContent=v.lastOilKm?'Last oil change at '+v.lastOilKm.toLocaleString()+' km. Next will be set at '+(v.lastOilKm+OIL_INTERVAL).toLocaleString()+' km.':'No previous oil change recorded.';
+  document.getElementById('oil-hint').textContent=v.lastOilKm?'Last oil change at '+v.lastOilKm.toLocaleString()+' km. Next will be set at '+(v.lastOilKm+oilInterval(v)).toLocaleString()+' km.':'No previous oil change recorded.';
   document.getElementById('oil-note').value='';
   document.getElementById('oil-intdate').value=new Date().toISOString().slice(0,10);
   openModal('oilOverlay');
@@ -1449,13 +1546,15 @@ function openOilModal(id){
 async function saveOilChange(){
   const km=Number(document.getElementById('oil-km').value);
   if(!km||km<0){ toast('Enter a valid mileage','err'); return; }
+  const _btn = document.querySelector('#oilOverlay .btn-ok');
+  lockBtn(_btn);
   const rawDate = document.getElementById('oil-intdate').value;
   const interventionDate = rawDate ? rawDate.split('-').reverse().join('/') : '';
   const res = await postAction({action:'logOilChange', vehicleId:activeVehicleId, currentKm:km, user:getUser(), note:document.getElementById('oil-note').value, interventionDate});
-  if(!res) return;
+  if(!res){ unlockBtn(_btn); return; }
   closeModal('oilOverlay');
   const v = getV(activeVehicleId);
-  if(v){ v.lastOilKm = km; v.nextOilKm = km + OIL_INTERVAL; }
+  if(v){ v.lastOilKm = km; v.nextOilKm = km + oilInterval(v); }
   const intDateVal = document.getElementById('oil-intdate').value;
   const intDateFmt = intDateVal ? intDateVal.split('-').reverse().join('/') : '';
   maintenance.push({ _row:99999, 'Timestamp': new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}), 'Vehicle ID': activeVehicleId, 'Type':'Oil Change', 'KM at service': km, 'User': getUser(), 'Notes': document.getElementById('oil-note').value, 'Status':'Pending', 'Intervention Date': intDateFmt });
@@ -1475,10 +1574,12 @@ function openDiagModal(id){
 async function saveDiag(){
   const dt=document.getElementById('diag-date').value.trim();
   if(!dt){ toast('Enter a valid date (DD/MM/YYYY)','err'); return; }
+  const _btn = document.querySelector('#diagOverlay .btn-primary');
+  lockBtn(_btn);
   const rawDiagDate = document.getElementById('diag-intdate').value;
   const interventionDate = rawDiagDate ? rawDiagDate.split('-').reverse().join('/') : '';
   const res = await postAction({action:'logDiagnostic', vehicleId:activeVehicleId, newExpiryDate:dt, user:getUser(), note:document.getElementById('diag-note').value, interventionDate});
-  if(!res) return;
+  if(!res){ unlockBtn(_btn); return; }
   closeModal('diagOverlay');
   const v = getV(activeVehicleId);
   if(v){ v.diagExpiry = dt; }
@@ -1491,9 +1592,11 @@ function openScheduleModal(){ openModal('schedOverlay'); }
 async function saveSchedule(){
   const id = document.getElementById('sc-id').value.trim();
   if(!id){ toast('Enter a vehicle ID','err'); return; }
+  const _btn = document.querySelector('#schedOverlay .btn-primary');
+  lockBtn(_btn);
   const rawDate = document.getElementById('sc-date').value;
   const fmtDate = rawDate ? rawDate.split('-').reverse().join('/') : '';
-  await postAction({
+  const resSched = await postAction({
     action:       'logMaintenance',
     vehicleId:    id,
     type:         document.getElementById('sc-type').value,
@@ -1503,6 +1606,8 @@ async function saveSchedule(){
     user:         getUser(),
     km:           document.getElementById('sf-km').value ? Number(document.getElementById('sf-km').value) : ''
   });
+  unlockBtn(_btn);
+  if(!resSched) return;
   document.getElementById('sf-km').value = '';
   closeModal('schedOverlay');
   maintenance.push({
@@ -1532,6 +1637,8 @@ function openEditScheduleModal(row, data) {
 async function saveEditSchedule() {
   const id = document.getElementById('es-id').value.trim();
   if (!id) { toast('Vehicle ID is required', 'err'); return; }
+  const _btn = document.querySelector('#editSchedOverlay .btn-primary');
+  lockBtn(_btn);
   const res = await postAction({
     action:    'updateMaintenanceRow',
     row:       activeSchedRow,
@@ -1541,6 +1648,7 @@ async function saveEditSchedule() {
     note:      document.getElementById('es-note').value,
     user:      getUser()
   });
+  unlockBtn(_btn);
   if (res && res.ok) {
     closeModal('editSchedOverlay');
     const entry = maintenance.find(m => m._row === activeSchedRow);
@@ -1814,6 +1922,20 @@ function showPage(name,el){
 
 // ---- INIT ----
 initUser();
+// Load from cache instantly, then fetch fresh data in background
+try {
+  const cached = sessionStorage.getItem('dna_cache');
+  if (cached) {
+    const c = JSON.parse(cached);
+    vehicles    = c.vehicles.map(mapVehicle);
+    maintenance = c.maintenance;
+    dailyChecks = c.dailyChecks;
+    lastModified = c.lastModified;
+    document.getElementById('loadingOverlay').style.display = 'none';
+    setSyncState('stale', 'Loading…');
+    rebuildAll();
+  }
+} catch(_) {}
 fetchData(false);
 syncInterval=setInterval(()=>fetchData(false), 300000);
 </script>

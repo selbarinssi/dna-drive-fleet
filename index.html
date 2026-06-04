@@ -1194,7 +1194,7 @@ function renderSchedule(){
       <td style="font-size:11px;color:var(--t3);white-space:nowrap">${(l['Intervention Date'] || l['Timestamp'] || '—').split(' ')[0]}</td>
       <td>
         <strong>${l['Vehicle ID'] || '—'}</strong>
-        ${(()=>{ const v = vehicles.find(x => x.id === l['Vehicle ID']); return v ? `<span style="font-size:11px;color:var(--t3);margin-left:4px">${v.model}</span>` : ''; })()}
+        ${(()=>{ const v = vehicles.find(x => x.id === l['Vehicle ID']); return v ? '<span style="font-size:11px;color:var(--t3);margin-left:4px">' + v.model + '</span>' : ''; })()}
       </td>
       <td><span class="badge ${badge}">${type}</span></td>
       <td class="mono" style="font-size:11px">${l['KM at service'] || '—'}</td>

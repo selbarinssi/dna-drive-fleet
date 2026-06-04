@@ -1550,7 +1550,8 @@ async function saveOilChange(){
   lockBtn(_btn);
   const rawDate = document.getElementById('oil-intdate').value;
   const interventionDate = rawDate ? rawDate.split('-').reverse().join('/') : '';
-  const res = await postAction({action:'logOilChange', vehicleId:activeVehicleId, currentKm:km, user:getUser(), note:document.getElementById('oil-note').value, interventionDate});
+  const vObj = getV(activeVehicleId);
+  const res = await postAction({action:'logOilChange', vehicleId:activeVehicleId, currentKm:km, model: vObj ? vObj.model : '', user:getUser(), note:document.getElementById('oil-note').value, interventionDate});
   if(!res){ unlockBtn(_btn); return; }
   closeModal('oilOverlay');
   const v = getV(activeVehicleId);

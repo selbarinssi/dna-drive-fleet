@@ -1205,7 +1205,7 @@ function renderSchedule(){
       <td>
         ${isDone
           ? '<span class="badge b-ok">✓ Done</span>'
-          : `<button class="act-btn" onclick='openEditScheduleModal(${l._row}, ${JSON.stringify({vehicleId:l["Vehicle ID"],km:l["KM at service"],type:l["Type"],note:l["Notes"]})})'>✏ Edit</button>
+          : `<button class="act-btn" data-row="${l._row}" data-vid="${(l['Vehicle ID']||'').replace(/"/g,'')}" data-km="${l['KM at service']||''}" data-type="${(l['Type']||'Other').replace(/"/g,'')}" data-note="${(l['Notes']||'').replace(/"/g,'&quot;')}" onclick="openEditScheduleModal(this)">✏ Edit</button>
              <button class="act-btn oil" onclick="markDone(${l._row})">Mark done</button>
              <button class="act-btn" style="border-color:var(--danger-bd); color:var(--danger);" onclick="deleteSchedule(${l._row})">🗑 Delete</button>`
         }
@@ -1275,6 +1275,15 @@ function setSchedView(mode, el){
   if(mode==='cal') renderSchedCal();
 }
 
+const SCHED_CAL_DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const SCHED_TYPE_STYLE = {
+  'Oil Change':`background:var(--ok-bg);color:var(--ok);border-color:var(--ok-bd)`,
+  'Annual Diagnostic':`background:var(--info-bg);color:var(--info);border-color:#bfdbfe`,
+  'Tyres':`background:var(--warn-bg);color:var(--warn);border-color:var(--warn-bd)`,
+  'Brake Service':`background:var(--danger-bg);color:var(--danger);border-color:var(--danger-bd)`,
+  'General Inspection':`background:var(--blue-l);color:var(--blue);border-color:#b8d0f5`,
+  'Other':`background:var(--bg);color:var(--t2);border-color:var(--bd)`
+};
 function renderSchedCal(){
   const el = document.getElementById('schedCalView');
   if(!el) return;
@@ -1286,22 +1295,6 @@ function renderSchedCal(){
 
   // Build map: 'YYYY-MM-DD' → [events]
   const evByDay = {};
-  const typeColor = {
-    'Oil Change':'#ok-bg',
-    'Annual Diagnostic':'#info-bg',
-    'Tyres':'#warn-bg',
-    'Brake Service':'#danger-bg',
-    'General Inspection':'#blue-l',
-    'Other':'#F2F0EB'
-  };
-  const typeStyle = {
-    'Oil Change':`background:var(--ok-bg);color:var(--ok);border-color:var(--ok-bd)`,
-    'Annual Diagnostic':`background:var(--info-bg);color:var(--info);border-color:#bfdbfe`,
-    'Tyres':`background:var(--warn-bg);color:var(--warn);border-color:var(--warn-bd)`,
-    'Brake Service':`background:var(--danger-bg);color:var(--danger);border-color:var(--danger-bd)`,
-    'General Inspection':`background:var(--blue-l);color:var(--blue);border-color:#b8d0f5`,
-    'Other':`background:var(--bg);color:var(--t2);border-color:var(--bd)`
-  };
   maintenance.forEach(r => {
     const raw = r['Intervention Date'] || r[0] || r['Timestamp'] || r['timestamp'] || '';
     if(!raw) return;
@@ -1312,7 +1305,6 @@ function renderSchedCal(){
     evByDay[key].push(r);
   });
 
-  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   let cells = '';
   // Leading blanks
   for(let i=0;i<firstDay;i++) cells += `<div class="sched-cal-day other-month"></div>`;
@@ -1327,7 +1319,7 @@ function renderSchedCal(){
       const isDone = status.toLowerCase() === 'done';
       const baseStyle = isDone
         ? 'background:#f0faf4;color:#15803D;border-color:#86efac;text-decoration:line-through;opacity:.75'
-        : typeStyle[type] || typeStyle['Other'];
+        : SCHED_TYPE_STYLE[type] || SCHED_TYPE_STYLE['Other'];
       return `<div class="sched-cal-event" style="${baseStyle}" title="${vid} — ${type}${isDone?' (Done)':''}">` + vid + ' · ' + type + `</div>`;
     }).join('') + (evs.length>3?`<div class="cal-more-btn" onclick="openDayPanel('${key}')">+${evs.length-3} more</div>`:'');
     cells += `<div class="sched-cal-day${isToday?' today':''}${evs.length?' clickable-day':''}" ${evs.length?`onclick="openDayPanel('${key}')"`:''}>
@@ -1341,7 +1333,7 @@ function renderSchedCal(){
       <button class="btn btn-outline btn-sm" onclick="schedCalDate=new Date(schedCalDate.getFullYear(),schedCalDate.getMonth()+1,1);renderSchedCal()">Next ›</button>
     </div>
     <div class="sched-cal-grid">
-      ${days.map(d=>`<div class="sched-cal-hdr">${d}</div>`).join('')}
+      ${SCHED_CAL_DAYS.map(d=>`<div class="sched-cal-hdr">${d}</div>`).join('')}
       ${cells}
     </div>`;
 }
@@ -1626,12 +1618,12 @@ async function saveSchedule(){
 }
 let activeSchedRow = null;
 
-function openEditScheduleModal(row, data) {
-  activeSchedRow = row;
-  document.getElementById('es-id').value   = data.vehicleId || '';
-  document.getElementById('es-km').value   = data.km        || '';
-  document.getElementById('es-type').value = data.type      || 'Other';
-  document.getElementById('es-note').value = data.note      || '';
+function openEditScheduleModal(btn) {
+  activeSchedRow = Number(btn.dataset.row);
+  document.getElementById('es-id').value   = btn.dataset.vid  || '';
+  document.getElementById('es-km').value   = btn.dataset.km   || '';
+  document.getElementById('es-type').value = btn.dataset.type || 'Other';
+  document.getElementById('es-note').value = btn.dataset.note || '';
   openModal('editSchedOverlay');
 }
 
@@ -1918,7 +1910,7 @@ function showPage(name,el){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('page-'+name).classList.add('active');
   el.classList.add('active');
-  renderActiveTab();
+  requestAnimationFrame(renderActiveTab);
 }
 
 // ---- INIT ----

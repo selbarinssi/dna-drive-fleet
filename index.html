@@ -1205,7 +1205,7 @@ function renderSchedule(){
       <td>
         ${isDone
           ? '<span class="badge b-ok">✓ Done</span>'
-          : `<button class="act-btn" data-row="${l._row}" data-vid="${(l['Vehicle ID']||'').replace(/"/g,'')}" data-km="${l['KM at service']||''}" data-type="${(l['Type']||'Other').replace(/"/g,'')}" data-note="${(l['Notes']||'').replace(/"/g,'&quot;')}" onclick="openEditScheduleModal(this)">✏ Edit</button>
+          : `<button class="act-btn" data-row="${l._row}" data-vid="${String(l['Vehicle ID']||'')}" data-km="${String(l['KM at service']||'')}" data-type="${String(l['Type']||'Other')}" data-note="${String(l['Notes']||'').replace(/'/g,'&#39;').replace(/"/g,'&quot;').replace(/\n/g,' ')}" onclick="openEditScheduleModal(this)">✏ Edit</button>
              <button class="act-btn oil" onclick="markDone(${l._row})">Mark done</button>
              <button class="act-btn" style="border-color:var(--danger-bd); color:var(--danger);" onclick="deleteSchedule(${l._row})">🗑 Delete</button>`
         }

@@ -281,7 +281,8 @@ function updateVehicle_(payload) {
 
 function logOilChange_(payload) {
   var km        = Number(payload.currentKm);
-  var nextOilKm = km + 15000;
+  var isIveco   = String(payload.model || '').toUpperCase().indexOf('IVECO TRAILER') !== -1;
+  var nextOilKm = km + (isIveco ? 20000 : 15000);
   updateVehicle_({
     vehicleId: payload.vehicleId,
     fields: {

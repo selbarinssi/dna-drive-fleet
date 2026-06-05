@@ -1413,7 +1413,13 @@ function unlockBtn(btn){
   btn.style.opacity = '';
 }
 // ---- MODALS ----
-function openModal(id){ document.getElementById(id).classList.add('open'); }
+function openModal(id){
+  const el = document.getElementById(id);
+  el.classList.add('open');
+  // Reset any previously locked button inside this modal
+  const btn = el.querySelector('button[disabled]');
+  if(btn) unlockBtn(btn);
+}
 function closeModal(id){ document.getElementById(id).classList.remove('open'); activeVehicleId=null; }
 
 function getV(id){ return vehicles.find(v=>v.id===id); }

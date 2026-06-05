@@ -298,6 +298,7 @@ select.form-input{cursor:pointer}
       <div class="sync-dot" id="syncDot"></div>
       <span class="sync-lbl" id="syncLbl">Connecting…</span>
       <button class="sync-btn" onclick="fetchData(true)">↻ Refresh</button>
+      <button class="sync-btn" onclick="lockSession()" title="Lock session" style="padding:4px 10px">🔒</button>
       <button class="user-badge" id="userBadge" onclick="promptUser()">👤 <span id="userName">…</span></button>
     </div>
     <div class="clock" id="clock"></div>
@@ -771,9 +772,19 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbwf56LwScE6MpM6R791gJ9D
 // ================================================================
 // Automatically execute check when dashboard initializes
 document.addEventListener("DOMContentLoaded", () => {
-  const currentAuth = sessionStorage.getItem('dash_pass');
-  
-  // If they already decided their role in this session, hide the prompt overlay entirely
+  const currentAuth  = sessionStorage.getItem('dash_pass');
+  const loginTime    = sessionStorage.getItem('dash_login_time');
+  const EIGHT_HOURS  = 8 * 60 * 60 * 1000;
+  const expired      = !loginTime || (Date.now() - Number(loginTime)) > EIGHT_HOURS;
+
+  if (expired && currentAuth) {
+    // Session too old — clear everything and force re-login
+    sessionStorage.removeItem('dash_pass');
+    sessionStorage.removeItem('dash_login_time');
+    sessionStorage.removeItem('dna_cache');
+    return; // authOverlay stays visible
+  }
+
   if (currentAuth === 'VIEWER_MODE' || (currentAuth && currentAuth !== '')) {
     document.getElementById('authOverlay').style.display = 'none';
   }
@@ -788,6 +799,7 @@ function submitAdminPassword() {
   }
   // Store whatever they typed into local session memory and close modal
   sessionStorage.setItem('dash_pass', enteredPass);
+  sessionStorage.setItem('dash_login_time', Date.now());
   document.getElementById('authOverlay').style.display = 'none';
   toast('Admin session initialized', 'ok');
 }
@@ -796,11 +808,21 @@ function submitAdminPassword() {
 function continueAsGuest() {
   // Flag this browser tab explicitly as a Guest
   sessionStorage.setItem('dash_pass', 'VIEWER_MODE');
+  sessionStorage.setItem('dash_login_time', Date.now());
   document.getElementById('authOverlay').style.display = 'none';
   toast('Viewing dashboard as Guest', 'info');
 }
 // ================================================================
-const OIL_INTERVAL = 15000; // default km between oil changes
+function lockSession(){
+  sessionStorage.removeItem('dash_pass');
+  sessionStorage.removeItem('dash_login_time');
+  sessionStorage.removeItem('dna_cache');
+  document.getElementById('authPasswordInput').value = '';
+  document.getElementById('authOverlay').style.display = 'flex';
+  toast('Session locked', 'ok');
+}
+// ================================================================
+const OIL_INTERVAL = 15000;
 function oilInterval(v){ return (v && v.model && v.model.toUpperCase().includes('IVECO TRAILER')) ? 20000 : OIL_INTERVAL; }
 const TODAY = new Date();
 

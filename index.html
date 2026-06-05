@@ -802,8 +802,8 @@ function submitAdminPassword() {
   sessionStorage.setItem('dash_login_time', Date.now());
   document.getElementById('authOverlay').style.display = 'none';
   toast('Admin session initialized', 'ok');
+  fetchData(false);
 }
-
 // Action when clicking "View as Guest"
 function continueAsGuest() {
   // Flag this browser tab explicitly as a Guest
@@ -811,6 +811,7 @@ function continueAsGuest() {
   sessionStorage.setItem('dash_login_time', Date.now());
   document.getElementById('authOverlay').style.display = 'none';
   toast('Viewing dashboard as Guest', 'info');
+  fetchData(false);
 }
 // ================================================================
 function lockSession(){

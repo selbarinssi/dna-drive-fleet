@@ -824,7 +824,13 @@ function lockSession(){
 }
 // ================================================================
 const OIL_INTERVAL = 15000;
-function oilInterval(v){ return (v && v.model && v.model.toUpperCase().includes('IVECO TRAILER')) ? 20000 : OIL_INTERVAL; }
+function oilInterval(v){
+  if(!v || !v.model) return OIL_INTERVAL;
+  const m = v.model.toUpperCase();
+  if(m.includes('IVECO TRAILER')) return 20000;
+  if(m.includes('MITSUBISHI FUSO')) return 10000;
+  return OIL_INTERVAL;
+}
 const TODAY = new Date();
 
 let vehicles = [];

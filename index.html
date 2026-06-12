@@ -513,7 +513,6 @@ select.form-input{cursor:pointer}
         <div class="form-field"><label class="form-label">Function / Zone</label><input class="form-input" id="ef-fn"></div>
         <div class="form-field"><label class="form-label">Chassis</label><input class="form-input" id="ef-chassis"></div>
         <div class="form-field"><label class="form-label">Owner</label><input class="form-input" id="ef-owner"></div>
-        <div class="form-field"><label class="form-label">Current mileage</label><input class="form-input" type="number" id="ef-km"></div>
         <div class="form-field"><label class="form-label">Last oil change km</label><input class="form-input" type="number" id="ef-lastoil"></div>
         <div class="form-field"><label class="form-label">Annual diagnostic expiry</label><input class="form-input" id="ef-diag" placeholder="DD/MM/YYYY"></div>
         <div class="form-field"><label class="form-label">Reg. expiry</label><input class="form-input" id="ef-regexp" placeholder="DD/MM/YYYY"></div>
@@ -1466,7 +1465,6 @@ async function saveEdit(){
     'Function':  document.getElementById('ef-fn').value,
     'Chassis':   document.getElementById('ef-chassis').value,
     'Owner':     document.getElementById('ef-owner').value,
-    'Mileage':   document.getElementById('ef-km').value,
     'Last Oil Change': document.getElementById('ef-lastoil').value,
     'Annual Diagnostic': document.getElementById('ef-diag').value,
     'Regist Exp':document.getElementById('ef-regexp').value,
@@ -1488,7 +1486,6 @@ async function saveEdit(){
     v.fn        = fields['Function']          ?? v.fn;
     v.chassis   = fields['Chassis']           ?? v.chassis;
     v.owner     = fields['Owner']             ?? v.owner;
-    v.currentKm = fields['Mileage']    !== '' ? Number(fields['Mileage'])    : v.currentKm;
     v.lastOilKm = fields['Last Oil Change'] !== '' ? Number(fields['Last Oil Change']) : v.lastOilKm;
     v.diagExpiry= fields['Annual Diagnostic'] ?? v.diagExpiry;
     v.regExpiry = fields['Regist Exp']        ?? v.regExpiry;

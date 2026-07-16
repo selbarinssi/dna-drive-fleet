@@ -779,6 +779,7 @@ function clearSession_(){
   sessionStorage.removeItem('dash_login_time');
   sessionStorage.removeItem('dna_cache');
   sessionStorage.removeItem('trip_drafts');
+  sessionStorage.removeItem('trip_config_cache');
 }
 
 // Action when clicking "Log in"
@@ -857,6 +858,31 @@ let usageTo = null;
 function getUser(){ return sessionStorage.getItem('dash_displayname') || sessionStorage.getItem('dash_user') || ''; }
 function initUser(){
   document.getElementById('userName').textContent = getUser();
+  fetchTripConfig();
+}
+
+// ---- TRIP CONFIG (Coworkers / Destinations from the Setup tab) ----
+// Fetched once per session and cached — not re-pulled on every 5-min sync.
+let tripConfig = { coworkers: [], destinations: [] };
+
+async function fetchTripConfig() {
+  const cached = sessionStorage.getItem('trip_config_cache');
+  if (cached) {
+    try { tripConfig = JSON.parse(cached); return; } catch(_) {}
+  }
+  try {
+    const res  = await fetch(API_URL + '?action=getTripConfig'
+      + '&username=' + encodeURIComponent(sessionStorage.getItem('dash_user') || '')
+      + '&password=' + encodeURIComponent(sessionStorage.getItem('dash_pass') || '')
+      + '&t=' + Date.now(), { redirect:'follow', mode:'cors' });
+    const data = await res.json();
+    if (data.ok) {
+      tripConfig = { coworkers: data.coworkers, destinations: data.destinations };
+      try { sessionStorage.setItem('trip_config_cache', JSON.stringify(tripConfig)); } catch(_) {}
+    }
+  } catch(e) {
+    console.error('Trip config fetch failed', e);
+  }
 }
 
 // ---- CLOCK ----

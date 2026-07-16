@@ -312,6 +312,7 @@ select.form-input{cursor:pointer}
   <div class="tab" onclick="showPage('schedule',this)">🗓 Schedule</div>
   <div class="tab" onclick="showPage('oil',this)">🛢 Oil Changes</div>
   <div class="tab" onclick="showPage('diag',this)">📅 Annual Diagnostic</div>
+  <div class="tab" onclick="showPage('trips',this)">🧳 Book a Trip</div>
 </div>
 
 <div class="content">
@@ -489,6 +490,28 @@ select.form-input{cursor:pointer}
   <div id="schedCalView" style="display:none"></div>
 </div>
 
+<!-- TRIPS -->
+<div class="page" id="page-trips">
+  <div class="filters" id="tripsFilters">
+    <button class="fbtn active" onclick="filterTrips('active',this)">Active</button>
+    <button class="fbtn" onclick="filterTrips('cancelled',this)">Cancelled</button>
+    <button class="fbtn" onclick="filterTrips('all',this)">All</button>
+  </div>
+  <div class="row-tools">
+    <button class="btn btn-primary" onclick="openTripModal()">+ New Trip Request</button>
+    <input class="srch" type="text" id="tripsSearch" placeholder="Search requester, coworker, destination…" oninput="renderTrips()">
+    <span class="count-lbl" id="tripsCount"></span>
+  </div>
+  <div class="tbl-wrap">
+    <table class="tbl">
+      <thead><tr>
+        <th>Trip ID</th><th>Requester</th><th>Coworkers</th><th>Destination</th>
+        <th>Departure</th><th>Return</th><th>Hotel</th><th>Status</th><th>Actions</th>
+      </tr></thead>
+      <tbody id="tripsTbody"></tbody>
+    </table>
+  </div>
+</div>
 
 </div><!-- end content -->
 
@@ -853,6 +876,11 @@ let usageDays = 7;
 let usageFrom = null;
 let usageTo = null;
 
+let trips = [];
+let tripNights = [];
+let tripsFilter = 'active';
+let tripsLoaded = false;
+
 // ---- USER ----
 // Identity now comes from the login itself (sessionStorage), not a separately-typed name.
 function getUser(){ return sessionStorage.getItem('dash_displayname') || sessionStorage.getItem('dash_user') || ''; }
@@ -1017,6 +1045,7 @@ function renderActiveTab(){
   if (id === 'page-oil')      renderOil();
   if (id === 'page-diag')     renderDiag();
   if (id === 'page-schedule') renderSchedule();
+  if (id === 'page-trips')    { if (tripsLoaded) renderTrips(); else fetchTrips(); }
 }
 
 // ---- KPI ----
@@ -1308,6 +1337,81 @@ async function updateNoteColumn(row, newText) {
     setSyncState('ok', 'Synced');
   }
 }
+// ---- TRIPS ----
+function isOwner(trip){ return sessionStorage.getItem('dash_user') === trip['Requester']; }
+function tripStatusBadge(status){
+  return status === 'Cancelled' ? {label:'Cancelled', cls:'b-gray'} : {label:'Active', cls:'b-ok'};
+}
+
+async function fetchTrips(){
+  try {
+    const res  = await fetch(API_URL + '?action=getTrips'
+      + '&username=' + encodeURIComponent(sessionStorage.getItem('dash_user') || '')
+      + '&password=' + encodeURIComponent(sessionStorage.getItem('dash_pass') || '')
+      + '&t=' + Date.now(), { redirect:'follow', mode:'cors' });
+    const data = await res.json();
+    if (data.ok) {
+      trips = data.trips;
+      tripNights = data.nights;
+      tripsLoaded = true;
+      renderTrips();
+    } else {
+      toast('Failed to load trips', 'err');
+    }
+  } catch(e) {
+    toast('Network error loading trips', 'err');
+    console.error(e);
+  }
+}
+
+function filterTrips(f, el){
+  tripsFilter = f;
+  document.querySelectorAll('#tripsFilters .fbtn').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  renderTrips();
+}
+
+function renderTrips(){
+  const q = (document.getElementById('tripsSearch').value || '').toLowerCase();
+  const rows = trips.filter(t => {
+    if (tripsFilter === 'active'    && t['Status'] === 'Cancelled') return false;
+    if (tripsFilter === 'cancelled' && t['Status'] !== 'Cancelled') return false;
+    if (q && !`${t['Requester']} ${t['Coworkers']} ${t['Destination City']}`.toLowerCase().includes(q)) return false;
+    return true;
+  }).sort((a,b) => new Date(b['Timestamp']) - new Date(a['Timestamp']));
+
+  document.getElementById('tripsCount').textContent = rows.length + ' trip(s)';
+  document.getElementById('tripsTbody').innerHTML = rows.map(t => {
+    const s = tripStatusBadge(t['Status']);
+    const canManage = isAdmin() || isOwner(t);
+    const actions = t['Status'] === 'Cancelled' ? '—' : (canManage
+      ? `<button class="act-btn oil" onclick="openTripModal('${t['Trip ID']}')">Edit</button>
+         <button class="act-btn diag" onclick="cancelTripPrompt('${t['Trip ID']}')">Cancel</button>`
+      : '—');
+    return `<tr>
+      <td class="mono" style="font-size:11px">${t['Trip ID']}</td>
+      <td>${t['Requester']}</td>
+      <td>${t['Coworkers']}</td>
+      <td>${t['Destination City']}</td>
+      <td>${t['Departure Date']}</td>
+      <td>${t['Return Date']}</td>
+      <td>${t['Needs Hotel'] === 'Yes' ? '🏨' : '🚫'}</td>
+      <td><span class="badge ${s.cls}">${s.label}</span></td>
+      <td style="white-space:nowrap">${actions}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function cancelTripPrompt(tripId){
+  if (!confirm('Cancel this trip? This keeps the record but marks it cancelled.')) return;
+  const res = await postAction({ action: 'cancelTrip', tripId });
+  if (!res) return;
+  const t = trips.find(x => x['Trip ID'] === tripId);
+  if (t) t['Status'] = 'Cancelled';
+  renderTrips();
+  toast('Trip cancelled', 'ok');
+}
+
 // ---- SCHEDULE CALENDAR VIEW ----
 let schedCalDate = new Date(); // current displayed month
 
@@ -1631,6 +1735,7 @@ async function saveDiag(){
 }
 
 function openScheduleModal(){ openModal('schedOverlay'); }
+function openTripModal(tripId){ toast('New/Edit Trip modal — coming in the next step', 'ok'); }
 async function saveSchedule(){
   const id = document.getElementById('sc-id').value.trim();
   if(!id){ toast('Enter a vehicle ID','err'); return; }

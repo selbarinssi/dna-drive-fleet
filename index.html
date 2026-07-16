@@ -502,6 +502,7 @@ select.form-input{cursor:pointer}
     <input class="srch" type="text" id="tripsSearch" placeholder="Search requester, coworker, destination…" oninput="renderTrips()">
     <span class="count-lbl" id="tripsCount"></span>
   </div>
+  <div id="tripDraftPanel" style="display:none;margin-bottom:12px"></div>
   <div class="tbl-wrap">
     <table class="tbl">
       <thead><tr>
@@ -618,6 +619,55 @@ select.form-input{cursor:pointer}
     <div class="modal-foot">
       <button class="btn btn-outline" onclick="closeModal('diagOverlay')">Cancel</button>
       <button class="btn btn-primary" onclick="saveDiag()">✓ Save renewal</button>
+    </div>
+  </div>
+</div>
+
+<!-- TRIP MODAL -->
+<div class="overlay" id="tripOverlay">
+  <div class="modal" style="width:480px">
+    <div class="modal-hdr">
+      <div><div class="modal-title" id="tripModalTitle">New trip request</div></div>
+      <button class="modal-close" onclick="closeModal('tripOverlay')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid" style="grid-template-columns:1fr">
+        <div class="form-field">
+          <label class="form-label">Coworkers</label>
+          <div id="trip-coworkers-list" style="max-height:140px;overflow-y:auto;border:1px solid var(--bd);border-radius:6px;padding:6px"></div>
+        </div>
+        <div class="form-field">
+          <label class="form-label">Destination</label>
+          <select class="form-input" id="trip-destination"></select>
+        </div>
+        <div class="form-field" style="display:flex;gap:10px">
+          <div style="flex:1">
+            <label class="form-label">Departure</label>
+            <input class="form-input" type="date" id="trip-departure" onchange="rebuildTripNights()">
+          </div>
+          <div style="flex:1">
+            <label class="form-label">Return</label>
+            <input class="form-input" type="date" id="trip-return" onchange="rebuildTripNights()">
+          </div>
+        </div>
+        <div class="form-field">
+          <label class="form-label" style="display:flex;align-items:center;gap:6px">
+            <input type="checkbox" id="trip-hotel" onchange="toggleTripHotel()"> Needs hotel
+          </label>
+        </div>
+        <div id="trip-nights-wrap" style="display:none">
+          <label class="form-label">Nights &amp; cities</label>
+          <div id="trip-nights-list"></div>
+        </div>
+        <div class="form-field">
+          <label class="form-label">Notes (optional)</label>
+          <input class="form-input" id="trip-notes" placeholder="e.g. Client visit">
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-outline" onclick="closeModal('tripOverlay')">Cancel</button>
+      <button class="btn btn-primary" id="tripSaveBtn" onclick="saveTripModal()">Add to Batch</button>
     </div>
   </div>
 </div>
@@ -880,6 +930,11 @@ let trips = [];
 let tripNights = [];
 let tripsFilter = 'active';
 let tripsLoaded = false;
+let tripDrafts = JSON.parse(sessionStorage.getItem('trip_drafts') || '[]');
+let editingTripId = null;
+let editingDraftIndex = null;
+function persistDrafts(){ try{ sessionStorage.setItem('trip_drafts', JSON.stringify(tripDrafts)); }catch(_){} }
+function toISODate(d){ if(!d) return ''; const p=d.split('/'); return p.length===3 ? p[2]+'-'+p[1]+'-'+p[0] : ''; }
 
 // ---- USER ----
 // Identity now comes from the login itself (sessionStorage), not a separately-typed name.
@@ -1380,6 +1435,7 @@ function renderTrips(){
     return true;
   }).sort((a,b) => new Date(b['Timestamp']) - new Date(a['Timestamp']));
 
+  renderDraftPanel();
   document.getElementById('tripsCount').textContent = rows.length + ' trip(s)';
   document.getElementById('tripsTbody').innerHTML = rows.map(t => {
     const s = tripStatusBadge(t['Status']);
@@ -1735,7 +1791,169 @@ async function saveDiag(){
 }
 
 function openScheduleModal(){ openModal('schedOverlay'); }
-function openTripModal(tripId){ toast('New/Edit Trip modal — coming in the next step', 'ok'); }
+
+// ---- TRIP MODAL (create/edit) ----
+function renderTripCoworkerCheckboxes(){
+  document.getElementById('trip-coworkers-list').innerHTML = (tripConfig.coworkers||[]).map(c=>
+    `<label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:3px 0">
+       <input type="checkbox" value="${c}"> ${c}
+     </label>`).join('') || '<div class="form-hint">No coworkers found in Setup tab</div>';
+}
+function renderTripDestinationOptions(){
+  document.getElementById('trip-destination').innerHTML = '<option value="">Select destination…</option>' +
+    (tripConfig.destinations||[]).map(d=>`<option value="${d}">${d}</option>`).join('');
+}
+function toggleTripHotel(){
+  const on = document.getElementById('trip-hotel').checked;
+  document.getElementById('trip-nights-wrap').style.display = on ? '' : 'none';
+  if(on) rebuildTripNights();
+}
+function rebuildTripNights(){
+  const dep = document.getElementById('trip-departure').value;
+  const ret = document.getElementById('trip-return').value;
+  const wrap = document.getElementById('trip-nights-list');
+  if(!document.getElementById('trip-hotel').checked) return;
+  if(!dep || !ret){ wrap.innerHTML = '<div class="form-hint">Set departure and return dates first</div>'; return; }
+  const start = new Date(dep), end = new Date(ret);
+  const nights = [];
+  let cur = new Date(start);
+  while(cur < end){ nights.push(new Date(cur)); cur.setDate(cur.getDate()+1); }
+  if(!nights.length){ wrap.innerHTML = '<div class="form-hint">No nights (same-day trip)</div>'; return; }
+  const opts = (tripConfig.destinations||[]).map(d=>`<option value="${d}">${d}</option>`).join('');
+  wrap.innerHTML = nights.map(n=>{
+    const iso = n.toISOString().slice(0,10);
+    const label = n.toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short'});
+    return `<div class="form-field"><label class="form-label">${label}</label>
+      <select class="form-input" data-date="${iso}" onchange="carryForwardNight(this)">${opts}</select></div>`;
+  }).join('');
+  const def = document.getElementById('trip-destination').value || '';
+  document.querySelectorAll('#trip-nights-list select').forEach(s=>s.value=def);
+}
+function carryForwardNight(sel){
+  let found=false;
+  document.querySelectorAll('#trip-nights-list select').forEach(s=>{
+    if(s===sel){ found=true; return; }
+    if(found && !s.dataset.manual) s.value = sel.value;
+  });
+  sel.dataset.manual = "1";
+}
+function openTripModal(tripId){
+  editingTripId = tripId || null;
+  editingDraftIndex = null;
+  renderTripCoworkerCheckboxes();
+  renderTripDestinationOptions();
+  if (tripId) {
+    const t = trips.find(x=>x['Trip ID']===tripId);
+    if(!t){ toast('Trip not found','err'); return; }
+    document.getElementById('tripModalTitle').textContent = 'Edit trip';
+    document.getElementById('tripSaveBtn').textContent = 'Save changes';
+    const cw = (t['Coworkers']||'').split(',').map(s=>s.trim()).filter(Boolean);
+    document.querySelectorAll('#trip-coworkers-list input').forEach(c=>c.checked = cw.includes(c.value));
+    document.getElementById('trip-destination').value = t['Destination City']||'';
+    document.getElementById('trip-departure').value = toISODate(t['Departure Date']);
+    document.getElementById('trip-return').value = toISODate(t['Return Date']);
+    document.getElementById('trip-hotel').checked = t['Needs Hotel']==='Yes';
+    document.getElementById('trip-notes').value = t['Notes']||'';
+  } else {
+    document.getElementById('tripModalTitle').textContent = 'New trip request';
+    document.getElementById('tripSaveBtn').textContent = 'Add to Batch';
+    document.querySelectorAll('#trip-coworkers-list input').forEach(c=>c.checked=false);
+    document.getElementById('trip-destination').value = '';
+    document.getElementById('trip-departure').value = '';
+    document.getElementById('trip-return').value = '';
+    document.getElementById('trip-hotel').checked = false;
+    document.getElementById('trip-notes').value = '';
+  }
+  toggleTripHotel();
+  openModal('tripOverlay');
+}
+function saveTripModal(){
+  const coworkers = Array.from(document.querySelectorAll('#trip-coworkers-list input:checked')).map(c=>c.value);
+  const destination = document.getElementById('trip-destination').value;
+  const departureDate = document.getElementById('trip-departure').value;
+  const returnDate = document.getElementById('trip-return').value;
+  const needsHotel = document.getElementById('trip-hotel').checked;
+  const notes = document.getElementById('trip-notes').value.trim();
+  if(!destination){ toast('Select a destination','err'); return; }
+  if(!departureDate || !returnDate){ toast('Select departure and return dates','err'); return; }
+  if(new Date(returnDate) < new Date(departureDate)){ toast('Return date must be after departure date','err'); return; }
+  const nights = [];
+  if(needsHotel) document.querySelectorAll('#trip-nights-list select').forEach(sel=>nights.push({date:sel.dataset.date, city:sel.value}));
+  const tripObj = { coworkers, destination, departureDate, returnDate, needsHotel, notes, nights };
+
+  if (editingTripId) {
+    saveTripEdit(editingTripId, tripObj);
+  } else if (editingDraftIndex !== null) {
+    tripDrafts[editingDraftIndex] = tripObj;
+    persistDrafts(); closeModal('tripOverlay'); renderDraftPanel();
+    toast('Draft updated','ok');
+  } else {
+    tripDrafts.push(tripObj);
+    persistDrafts(); closeModal('tripOverlay'); renderDraftPanel();
+    toast('Added to batch','ok');
+  }
+}
+async function saveTripEdit(tripId, tripObj){
+  const fields = {
+    'Coworkers': tripObj.coworkers.join(', '),
+    'Destination City': tripObj.destination,
+    'Departure Date': tripObj.departureDate,
+    'Return Date': tripObj.returnDate,
+    'Needs Hotel': tripObj.needsHotel ? 'Yes':'No',
+    'Notes': tripObj.notes
+  };
+  const res = await postAction({ action:'updateTrip', tripId, fields });
+  if(!res) return;
+  const t = trips.find(x=>x['Trip ID']===tripId);
+  if(t) Object.assign(t, fields);
+  closeModal('tripOverlay'); renderTrips();
+  toast('Trip updated','ok');
+}
+function editDraft(i){
+  editingTripId = null; editingDraftIndex = i;
+  const d = tripDrafts[i];
+  renderTripCoworkerCheckboxes(); renderTripDestinationOptions();
+  document.getElementById('tripModalTitle').textContent = 'Edit draft trip';
+  document.getElementById('tripSaveBtn').textContent = 'Update draft';
+  document.querySelectorAll('#trip-coworkers-list input').forEach(c=>c.checked = d.coworkers.includes(c.value));
+  document.getElementById('trip-destination').value = d.destination;
+  document.getElementById('trip-departure').value = d.departureDate;
+  document.getElementById('trip-return').value = d.returnDate;
+  document.getElementById('trip-hotel').checked = d.needsHotel;
+  document.getElementById('trip-notes').value = d.notes || '';
+  toggleTripHotel();
+  openModal('tripOverlay');
+}
+function removeDraft(i){ tripDrafts.splice(i,1); persistDrafts(); renderDraftPanel(); }
+function renderDraftPanel(){
+  const panel = document.getElementById('tripDraftPanel');
+  if(!tripDrafts.length){ panel.style.display='none'; panel.innerHTML=''; return; }
+  panel.style.display='';
+  panel.innerHTML = `
+    <div class="modal-sub" style="margin-bottom:6px;font-weight:600">Pending Requests (${tripDrafts.length})</div>
+    <div class="m-list">
+      ${tripDrafts.map((d,i)=>`
+        <div class="m-item">
+          <div class="m-info">
+            <div class="m-veh">${d.coworkers.join(', ')||'—'} · ${d.destination}</div>
+            <div class="m-meta">${d.departureDate} → ${d.returnDate} · ${d.needsHotel?'🏨':'🚫'}</div>
+          </div>
+          <div class="m-right" style="white-space:nowrap">
+            <button class="act-btn oil" onclick="editDraft(${i})">✏</button>
+            <button class="act-btn diag" onclick="removeDraft(${i})">🗑</button>
+          </div>
+        </div>`).join('')}
+    </div>
+    <button class="btn btn-ok" style="margin-top:8px" onclick="submitAllDrafts()">Submit All (${tripDrafts.length})</button>`;
+}
+async function submitAllDrafts(){
+  if(!tripDrafts.length) return;
+  const res = await postAction({ action:'addTrips', trips: tripDrafts });
+  if(!res) return;
+  tripDrafts = []; persistDrafts(); renderDraftPanel();
+  toast(res.added + ' trip(s) submitted','ok');
+  fetchTrips();
+}
 async function saveSchedule(){
   const id = document.getElementById('sc-id').value.trim();
   if(!id){ toast('Enter a vehicle ID','err'); return; }

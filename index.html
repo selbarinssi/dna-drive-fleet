@@ -299,7 +299,7 @@ select.form-input{cursor:pointer}
       <span class="sync-lbl" id="syncLbl">Connecting…</span>
       <button class="sync-btn" onclick="fetchData(true)">↻ Refresh</button>
       <button class="sync-btn" onclick="lockSession()" title="Lock session" style="padding:4px 10px">🔒</button>
-      <button class="user-badge" id="userBadge" onclick="promptUser()">👤 <span id="userName">…</span></button>
+      <button class="user-badge" id="userBadge" title="Logged in — use the lock button to switch accounts">👤 <span id="userName">…</span></button>
     </div>
     <div class="clock" id="clock"></div>
   </div>
@@ -690,12 +690,12 @@ select.form-input{cursor:pointer}
 <div id="authOverlay" class="overlay" style="display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.6); position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 9999;">
   <div style="font-family:'DM Sans',sans-serif;background: var(--white); padding: 30px; border-radius: 12px; width: 100%; max-width: 400px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); text-align: center;">
     <h3 style="margin-bottom: 10px; color: var(--blue);">D&A Drive Access</h3>
-    <p style="color: var(--t2); font-size: 14px; margin-bottom: 20px;">Please authenticate to modify fleet configurations or continue as a viewer.</p>
-    
-    <input type="password" id="authPasswordInput" placeholder="Enter Admin Password" style="width: 100%; padding: 12px; border: 1px solid var(--bd); border-radius: 6px; margin-bottom: 15px; font-size: 14px; text-align: center;">
-    
-    <button onclick="submitAdminPassword()" style="width: 100%; background: var(--blue); color: var(--white); padding: 12px; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; margin-bottom: 10px;">🔓 Login as Admin</button>
-    <button onclick="continueAsGuest()" style="width: 100%; background: transparent; color: var(--t2); padding: 10px; border: 1px solid var(--bd); border-radius: 6px; cursor: pointer;">👁 View as Guest</button>
+    <p style="color: var(--t2); font-size: 14px; margin-bottom: 20px;">Please log in with your account to continue.</p>
+
+    <input type="text" id="authUsernameInput" placeholder="Username" autocomplete="username" style="width: 100%; padding: 12px; border: 1px solid var(--bd); border-radius: 6px; margin-bottom: 10px; font-size: 14px; text-align: center;">
+    <input type="password" id="authPasswordInput" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')submitLogin()" style="width: 100%; padding: 12px; border: 1px solid var(--bd); border-radius: 6px; margin-bottom: 15px; font-size: 14px; text-align: center;">
+
+    <button id="authLoginBtn" onclick="submitLogin()" style="width: 100%; background: var(--blue); color: var(--white); padding: 12px; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">🔓 Log in</button>
   </div>
 </div>
 <!-- DAY DETAIL PANEL -->
@@ -705,23 +705,6 @@ select.form-input{cursor:pointer}
     <button class="day-panel-close" onclick="closeDayPanel()">×</button>
   </div>
   <div class="day-panel-body" id="dayPanelBody"></div>
-</div>
-<!-- USER MODAL -->
-<div class="overlay" id="userOverlay">
-  <div class="modal" style="width:340px">
-    <div class="modal-hdr">
-      <div><div class="modal-title">Who are you?</div><div class="modal-sub">Used to tag edits in the activity log</div></div>
-    </div>
-    <div class="modal-body">
-      <div class="form-field">
-        <label class="form-label">Your name</label>
-        <input class="form-input" id="user-name-input" placeholder="Enter your name…" onkeydown="if(event.key==='Enter')saveUser()">
-      </div>
-    </div>
-    <div class="modal-foot">
-      <button class="btn btn-primary" onclick="saveUser()">Continue</button>
-    </div>
-  </div>
 </div>
 <!-- ADD VEHICLE MODAL -->
 <div class="overlay" id="addOverlay">
@@ -771,56 +754,77 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbwf56LwScE6MpM6R791gJ9D
 // ================================================================
 // Automatically execute check when dashboard initializes
 document.addEventListener("DOMContentLoaded", () => {
-  const currentAuth  = sessionStorage.getItem('dash_pass');
+  const currentUser  = sessionStorage.getItem('dash_user');
   const loginTime    = sessionStorage.getItem('dash_login_time');
   const EIGHT_HOURS  = 8 * 60 * 60 * 1000;
   const expired      = !loginTime || (Date.now() - Number(loginTime)) > EIGHT_HOURS;
 
-  if (expired && currentAuth) {
+  if (expired && currentUser) {
     // Session too old — clear everything and force re-login
-    sessionStorage.removeItem('dash_pass');
-    sessionStorage.removeItem('dash_login_time');
-    sessionStorage.removeItem('dna_cache');
+    clearSession_();
     return; // authOverlay stays visible
   }
 
-  if (currentAuth === 'VIEWER_MODE' || (currentAuth && currentAuth !== '')) {
+  if (currentUser && sessionStorage.getItem('dash_pass')) {
     document.getElementById('authOverlay').style.display = 'none';
+    initUser();
   }
 });
 
-// Action when clicking "Login as Admin"
-function submitAdminPassword() {
-  const enteredPass = document.getElementById('authPasswordInput').value;
-  if (!enteredPass) {
-    toast('Please enter a password', 'err');
+function clearSession_(){
+  sessionStorage.removeItem('dash_user');
+  sessionStorage.removeItem('dash_pass');
+  sessionStorage.removeItem('dash_role');
+  sessionStorage.removeItem('dash_displayname');
+  sessionStorage.removeItem('dash_login_time');
+  sessionStorage.removeItem('dna_cache');
+  sessionStorage.removeItem('trip_drafts');
+}
+
+// Action when clicking "Log in"
+async function submitLogin() {
+  const username = document.getElementById('authUsernameInput').value.trim();
+  const password = document.getElementById('authPasswordInput').value;
+  if (!username || !password) {
+    toast('Please enter a username and password', 'err');
     return;
   }
-  // Store whatever they typed into local session memory and close modal
-  sessionStorage.setItem('dash_pass', enteredPass);
-  sessionStorage.setItem('dash_login_time', Date.now());
-  document.getElementById('authOverlay').style.display = 'none';
-  toast('Admin session initialized', 'ok');
-  fetchData(false);
-}
-// Action when clicking "View as Guest"
-function continueAsGuest() {
-  // Flag this browser tab explicitly as a Guest
-  sessionStorage.setItem('dash_pass', 'VIEWER_MODE');
-  sessionStorage.setItem('dash_login_time', Date.now());
-  document.getElementById('authOverlay').style.display = 'none';
-  toast('Viewing dashboard as Guest', 'info');
-  fetchData(false);
+  const btn = document.getElementById('authLoginBtn');
+  lockBtn(btn, 'Logging in…');
+  try {
+    const res  = await fetch(API_URL + '?action=authenticate&username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password) + '&t=' + Date.now(), { redirect: 'follow' });
+    const json = JSON.parse(await res.text());
+    if (!json.ok) {
+      toast(json.error || 'Login failed', 'err');
+      unlockBtn(btn);
+      return;
+    }
+    sessionStorage.setItem('dash_user', json.username);
+    sessionStorage.setItem('dash_pass', password);
+    sessionStorage.setItem('dash_role', json.role);
+    sessionStorage.setItem('dash_displayname', json.displayName);
+    sessionStorage.setItem('dash_login_time', Date.now());
+    document.getElementById('authOverlay').style.display = 'none';
+    document.getElementById('authPasswordInput').value = '';
+    initUser();
+    toast('Welcome, ' + json.displayName + '!', 'ok');
+    fetchData(false);
+  } catch(e) {
+    toast('Network error. Check connection.', 'err');
+    console.error(e);
+  } finally {
+    unlockBtn(btn);
+  }
 }
 // ================================================================
 function lockSession(){
-  sessionStorage.removeItem('dash_pass');
-  sessionStorage.removeItem('dash_login_time');
-  sessionStorage.removeItem('dna_cache');
+  clearSession_();
+  document.getElementById('authUsernameInput').value = '';
   document.getElementById('authPasswordInput').value = '';
   document.getElementById('authOverlay').style.display = 'flex';
   toast('Session locked', 'ok');
 }
+function isAdmin(){ return sessionStorage.getItem('dash_role') === 'Admin'; }
 // ================================================================
 const OIL_INTERVAL = 15000;
 function oilInterval(v){
@@ -849,23 +853,10 @@ let usageFrom = null;
 let usageTo = null;
 
 // ---- USER ----
-function getUser(){ return localStorage.getItem('dna_user') || ''; }
-function saveUser(){
-  const v = document.getElementById('user-name-input').value.trim();
-  if(!v) return;
-  localStorage.setItem('dna_user', v);
-  document.getElementById('userName').textContent = v;
-  closeModal('userOverlay');
-  toast('Welcome, ' + v + '!', 'ok');
-}
-function promptUser(){
-  document.getElementById('user-name-input').value = getUser();
-  openModal('userOverlay');
-}
+// Identity now comes from the login itself (sessionStorage), not a separately-typed name.
+function getUser(){ return sessionStorage.getItem('dash_displayname') || sessionStorage.getItem('dash_user') || ''; }
 function initUser(){
-  const u = getUser();
-  if(!u){ openModal('userOverlay'); }
-  else { document.getElementById('userName').textContent = u; }
+  document.getElementById('userName').textContent = getUser();
 }
 
 // ---- CLOCK ----
@@ -895,7 +886,10 @@ async function fetchData(manual) {
     setSyncState('stale', 'Refreshing…');
   }
   try {
-    const res  = await fetch(API_URL + '?action=getAll&t=' + Date.now(), { redirect:'follow', mode:'cors' });
+    const res  = await fetch(API_URL + '?action=getAll'
+      + '&username=' + encodeURIComponent(sessionStorage.getItem('dash_user') || '')
+      + '&password=' + encodeURIComponent(sessionStorage.getItem('dash_pass') || '')
+      + '&t=' + Date.now(), { redirect:'follow', mode:'cors' });
     const data = await res.json();
     if (data.ok) {
       vehicles     = data.vehicles.map(mapVehicle);
@@ -1688,6 +1682,7 @@ async function saveEditSchedule() {
 async function postAction(payload) {
   try {
     const action = payload.action;
+    payload.username = sessionStorage.getItem('dash_user') || '';
     payload.password = sessionStorage.getItem('dash_pass') || ''; 
     
     const data = encodeURIComponent(JSON.stringify(payload));
@@ -1699,7 +1694,8 @@ async function postAction(payload) {
     const json = JSON.parse(text);
     
     if (!json.ok && json.error.includes('Unauthorized')) {
-      sessionStorage.removeItem('dash_pass');
+      clearSession_();
+      document.getElementById('authOverlay').style.display = 'flex';
     }
     
     if (!json.ok) {

@@ -7,50 +7,78 @@ var SHEET_DAILY       = 'Daily Checks';
 var SHEET_MAINTENANCE = 'Maintenance';
 var SHEET_LOG = 'DashboardLog';
 
+// ---- Trips & Config spreadsheet (separate document) ----
+var TRIPS_SS_ID  = '1nixoCLzylc5a5vLSNFoaf3xEbUojjBkY8TIQUyjgRX8';
+var SHEET_USERS  = 'Users';
+var SHEET_SETUP  = 'Setup';
+var SHEET_TRIPS  = 'Trips';
+var SHEET_TRIP_NIGHTS = 'TripAccommodations';
+var SHEET_TRIP_LOG    = 'DashboardLog'; // separate tab, inside TRIPS_SS_ID
+
 // ================================================================
 // GET — serves driver forms + dashboard API
 // ================================================================
 function doGet(e) {
   var action = e && e.parameter && e.parameter.action;
-  
-  // 1. READ ONLY actions that anyone can see (if you want the public to view dashboards)
-  if (action === 'getVehicles') return getVehicles_();
-  if (action === 'getAll')      return getAll_();
-  if (action === 'getLogs')     return getLogs_();
-  if (action === 'getMaintenanceLog') return getMaintenanceLog_();
-  if (action === 'getDailyChecks')    return getDailyChecks_();
 
-  // 2. WRITE ACTIONS — These change data and MUST be protected
-  var writeActions = [
-  'updateVehicle', 'logOilChange', 'logDiagnostic',
-  'logMaintenance', 'addVehicle', 'markMaintenanceDone',
-  'deleteMaintenanceRow', 'updateMaintenanceCell', 'updateMaintenanceRow'  // ← add this
+  // 0. Login itself — this call IS the credential check, so it runs before the gate below
+  if (action === 'authenticate') {
+    return authenticateUser_(e.parameter.username, e.parameter.password);
+  }
+
+  // 1. Every dashboard action (read or write) now requires a valid Users-sheet account
+  var dashboardActions = [
+    'getVehicles', 'getAll', 'getLogs', 'getMaintenanceLog', 'getDailyChecks',
+    'updateVehicle', 'logOilChange', 'logDiagnostic', 'logMaintenance', 'addVehicle',
+    'markMaintenanceDone', 'deleteMaintenanceRow', 'updateMaintenanceCell', 'updateMaintenanceRow',
+    'addUser'
   ];
 
-  if (writeActions.indexOf(action) !== -1) {
+  if (dashboardActions.indexOf(action) !== -1) {
     try {
-      var payload = JSON.parse(e.parameter.payload);
-      
-      // Fetch the password you saved securely in Part 1
-      var correctPassword = PropertiesService.getScriptProperties().getProperty('DASHBOARD_PASSWORD');
-      
-      // Verify if the user provided the correct password
-      if (!payload.password || payload.password !== correctPassword) {
-        return cors_(ContentService.createTextOutput(JSON.stringify({ 
-          ok: false, 
-          error: 'Unauthorized: Invalid or missing dashboard password.' 
+      // Write actions carry a JSON payload (which includes credentials);
+      // read actions pass username/password as plain query params
+      var username, password, payload;
+      if (e.parameter.payload) {
+        payload  = JSON.parse(e.parameter.payload);
+        username = payload.username;
+        password = payload.password;
+      } else {
+        username = e.parameter.username;
+        password = e.parameter.password;
+      }
+
+      var user = verifyCredentials_(username, password);
+      if (!user) {
+        return cors_(ContentService.createTextOutput(JSON.stringify({
+          ok: false,
+          error: 'Unauthorized: Invalid or missing credentials.'
         })));
       }
-      
-      // Password is correct! Run the requested action
-      if (action === 'updateVehicle')       return updateVehicle_(payload);
-      if (action === 'logOilChange')        return logOilChange_(payload);
-      if (action === 'logDiagnostic')       return logDiagnostic_(payload);
-      if (action === 'logMaintenance')      return logMaintenance_(payload);
-      if (action === 'addVehicle')          return addVehicle_(payload);
-      if (action === 'markMaintenanceDone') return markMaintenanceDone_(payload);
+
+      // Reads — any logged-in user, Admin or User
+      if (action === 'getVehicles')       return getVehicles_();
+      if (action === 'getAll')            return getAll_();
+      if (action === 'getLogs')           return getLogs_();
+      if (action === 'getMaintenanceLog') return getMaintenanceLog_();
+      if (action === 'getDailyChecks')    return getDailyChecks_();
+
+      // Everything past this point writes Fleet data — Admin role required
+      if (user.role !== 'Admin') {
+        return cors_(ContentService.createTextOutput(JSON.stringify({
+          ok: false,
+          error: 'Unauthorized: Admin role required.'
+        })));
+      }
+      if (action === 'addUser')              return addUser_(payload);
+      if (action === 'updateVehicle')        return updateVehicle_(payload);
+      if (action === 'logOilChange')         return logOilChange_(payload);
+      if (action === 'logDiagnostic')        return logDiagnostic_(payload);
+      if (action === 'logMaintenance')       return logMaintenance_(payload);
+      if (action === 'addVehicle')           return addVehicle_(payload);
+      if (action === 'markMaintenanceDone')  return markMaintenanceDone_(payload);
       if (action === 'deleteMaintenanceRow') return deleteMaintenanceRow_(payload);
-      if (action === 'updateMaintenanceCell') return updateMaintenanceCell_(payload);
+      if (action === 'updateMaintenanceCell')return updateMaintenanceCell_(payload);
       if (action === 'updateMaintenanceRow') return updateMaintenanceRow_(payload);
 
     } catch(err) { 
@@ -58,7 +86,7 @@ function doGet(e) {
     }
   }
 
-  // --- Driver HTML forms (keep as is) ---
+  // --- Driver HTML forms (untouched — separate flow, no dashboard login involved) ---
   try {
     var page = e.parameter.page;
     if (page === 'incidents') {
@@ -412,6 +440,96 @@ function updateMaintenanceRow_(payload) {
   return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true })));
 }
 // ================================================================
+// AUTH — Users sheet (lives in TRIPS_SS_ID, tab "Users")
+// Columns: Username | PasswordHash | Salt | Display Name | Role
+// ================================================================
+function getTripSS_() {
+  return SpreadsheetApp.openById(TRIPS_SS_ID);
+}
+
+function getOrCreateUsersSheet_() {
+  var ss = getTripSS_();
+  var sh = ss.getSheetByName(SHEET_USERS);
+  if (!sh) {
+    sh = ss.insertSheet(SHEET_USERS);
+    sh.appendRow(['Username', 'PasswordHash', 'Salt', 'Display Name', 'Role']);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function generateSalt_() {
+  return Utilities.getUuid();
+}
+
+function hashPassword_(password, salt) {
+  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(password) + String(salt));
+  return bytes.map(function(b) {
+    var v = (b < 0 ? b + 256 : b).toString(16);
+    return v.length === 1 ? '0' + v : v;
+  }).join('');
+}
+
+// Returns { username, displayName, role } on success, or null
+function verifyCredentials_(username, password) {
+  if (!username || !password) return null;
+  var sh   = getOrCreateUsersSheet_();
+  var data = sh.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]).toLowerCase() === String(username).toLowerCase()) {
+      var storedHash = data[i][1];
+      var salt       = data[i][2];
+      if (hashPassword_(password, salt) === storedHash) {
+        return { username: data[i][0], displayName: data[i][3] || data[i][0], role: data[i][4] || 'User' };
+      }
+      return null; // wrong password
+    }
+  }
+  return null; // username not found
+}
+
+function authenticateUser_(username, password) {
+  var user = verifyCredentials_(username, password);
+  if (!user) {
+    return cors_(ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'Invalid username or password.' })));
+  }
+  return cors_(ContentService.createTextOutput(JSON.stringify({
+    ok: true, username: user.username, displayName: user.displayName, role: user.role
+  })));
+}
+
+// Admin-only — called after doGet() has already confirmed the caller's role === 'Admin'
+function addUser_(payload) {
+  if (!payload.newUsername || !payload.newPassword) {
+    return cors_(ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'Missing new user credentials.' })));
+  }
+  var sh   = getOrCreateUsersSheet_();
+  var data = sh.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]).toLowerCase() === String(payload.newUsername).toLowerCase()) {
+      return cors_(ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'Username already exists.' })));
+    }
+  }
+  var salt = generateSalt_();
+  var hash = hashPassword_(payload.newPassword, salt);
+  sh.appendRow([
+    payload.newUsername,
+    hash,
+    salt,
+    payload.newDisplayName || payload.newUsername,
+    payload.newRole === 'Admin' ? 'Admin' : 'User'
+  ]);
+  appendLog_(getTripSS_(), {
+    timestamp: new Date(),
+    vehicleId: '',
+    action:    'User created: ' + payload.newUsername + ' (' + (payload.newRole === 'Admin' ? 'Admin' : 'User') + ')',
+    user:      payload.username || 'Unknown',
+    note:      ''
+  });
+  return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true })));
+}
+
+// ================================================================
 // HELPERS
 // ================================================================
 function cors_(output) {
@@ -512,4 +630,26 @@ function uploadIncidentReport(formData) {
 
 function testRun() {
   getVehicles_();
+}
+
+// ================================================================
+// ONE-TIME SETUP — run this once manually from the Apps Script editor
+// (select it in the function dropdown, click Run) to create the first
+// Admin account. Safe to leave in place — it refuses to run again if
+// "Saad" already exists.
+// ================================================================
+
+function seedFirstAdmin() {
+  var sh   = getOrCreateUsersSheet_();
+  var data = sh.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]).toLowerCase() === 'saad') {
+      Logger.log('User "Saad" already exists — skipping seed.');
+      return;
+    }
+  }
+  var salt = generateSalt_();
+  var hash = hashPassword_('Rinci@2026', salt);
+  sh.appendRow(['Saad', hash, salt, 'Saad', 'Admin']);
+  Logger.log('Admin account "Saad" created.');
 }

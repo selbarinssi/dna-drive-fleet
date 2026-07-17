@@ -23,7 +23,10 @@ function doGet(e) {
 
   // 0. Login itself — this call IS the credential check, so it runs before the gate below
   if (action === 'authenticate') {
-    return authenticateUser_(e.parameter.username, e.parameter.password);
+    var _tAuth0 = Date.now();
+    var _authResult = authenticateUser_(e.parameter.username, e.parameter.password);
+    Logger.log('[TIMING] authenticate | total: ' + (Date.now() - _tAuth0) + 'ms');
+    return _authResult;
   }
 
   // 1. Every dashboard action (read or write) now requires a valid Users-sheet account
@@ -31,11 +34,12 @@ function doGet(e) {
     'getVehicles', 'getAll', 'getLogs', 'getMaintenanceLog', 'getDailyChecks',
     'updateVehicle', 'logOilChange', 'logDiagnostic', 'logMaintenance', 'addVehicle',
     'markMaintenanceDone', 'deleteMaintenanceRow', 'updateMaintenanceCell', 'updateMaintenanceRow',
-    'addUser'
+    'addUser', 'getTripConfig', 'getTrips', 'addTrips', 'updateTrip', 'cancelTrip'
   ];
 
   if (dashboardActions.indexOf(action) !== -1) {
     try {
+      var _t0 = Date.now();
       // Write actions carry a JSON payload (which includes credentials);
       // read actions pass username/password as plain query params
       var username, password, payload;
@@ -49,6 +53,7 @@ function doGet(e) {
       }
 
       var user = verifyCredentials_(username, password);
+      Logger.log('[TIMING] ' + action + ' | auth check: ' + (Date.now() - _t0) + 'ms');
       if (!user) {
         return cors_(ContentService.createTextOutput(JSON.stringify({
           ok: false,
@@ -57,11 +62,25 @@ function doGet(e) {
       }
 
       // Reads — any logged-in user, Admin or User
-      if (action === 'getVehicles')       return getVehicles_();
-      if (action === 'getAll')            return getAll_();
-      if (action === 'getLogs')           return getLogs_();
-      if (action === 'getMaintenanceLog') return getMaintenanceLog_();
-      if (action === 'getDailyChecks')    return getDailyChecks_();
+      var _tReadStart = Date.now();
+      var _result;
+      if (action === 'getVehicles')       _result = getVehicles_();
+      if (action === 'getAll')            _result = getAll_();
+      if (action === 'getLogs')           _result = getLogs_();
+      if (action === 'getMaintenanceLog') _result = getMaintenanceLog_();
+      if (action === 'getDailyChecks')    _result = getDailyChecks_();
+      if (action === 'getTripConfig')     return getTripConfig_();
+      if (action === 'getTrips')          return getTrips_();
+
+      // Trip create/edit/cancel — any logged-in user; ownership enforced inside
+      // each function against the verified `user` object above, never client input
+      if (action === 'addTrips')          return addTrips_(payload, user);
+      if (action === 'updateTrip')        return updateTrip_(payload, user);
+      if (action === 'cancelTrip')        return cancelTrip_(payload, user);
+      if (_result) {
+        Logger.log('[TIMING] ' + action + ' | sheet read: ' + (Date.now() - _tReadStart) + 'ms | total: ' + (Date.now() - _t0) + 'ms');
+        return _result;
+      }
 
       // Everything past this point writes Fleet data — Admin role required
       if (user.role !== 'Admin') {
@@ -462,6 +481,35 @@ function generateSalt_() {
   return Utilities.getUuid();
 }
 
+// Reads Coworkers (col M) and Destinations (col O) from the Setup tab,
+// starting row 2 down until each column runs out. Cached client-side —
+// not meant to be re-fetched on every 5-min sync.
+function getTripConfig_() {
+  var ss = getTripSS_();
+  var sh = ss.getSheetByName(SHEET_SETUP);
+  if (!sh) {
+    return cors_(ContentService.createTextOutput(JSON.stringify({
+      ok: true, coworkers: [], destinations: []
+    })));
+  }
+
+  var lastRow = sh.getLastRow();
+  var coworkers = [];
+  var destinations = [];
+  if (lastRow >= 2) {
+    var mVals = sh.getRange(2, 13, lastRow - 1, 1).getValues(); // col M
+    var oVals = sh.getRange(2, 15, lastRow - 1, 1).getValues(); // col O
+    coworkers    = mVals.map(function(r){ return r[0]; }).filter(function(v){ return v !== '' && v !== null; });
+    destinations = oVals.map(function(r){ return r[0]; }).filter(function(v){ return v !== '' && v !== null; });
+  }
+
+  return cors_(ContentService.createTextOutput(JSON.stringify({
+    ok: true,
+    coworkers: coworkers,
+    destinations: destinations
+  })));
+}
+
 function hashPassword_(password, salt) {
   var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(password) + String(salt));
   return bytes.map(function(b) {
@@ -471,10 +519,29 @@ function hashPassword_(password, salt) {
 }
 
 // Returns { username, displayName, role } on success, or null
-function verifyCredentials_(username, password) {
-  if (!username || !password) return null;
+// ---- Users cache (avoids opening TRIPS_SS_ID on every request) ----
+var USERS_CACHE_KEY = 'dna_users_cache';
+var USERS_CACHE_TTL = 21600; // seconds — 6h, the max CacheService allows
+
+function getUsersData_() {
+  var cache  = CacheService.getScriptCache();
+  var cached = cache.get(USERS_CACHE_KEY);
+  if (cached) return JSON.parse(cached);
+
   var sh   = getOrCreateUsersSheet_();
   var data = sh.getDataRange().getValues();
+  cache.put(USERS_CACHE_KEY, JSON.stringify(data), USERS_CACHE_TTL);
+  return data;
+}
+
+function invalidateUsersCache_() {
+  CacheService.getScriptCache().remove(USERS_CACHE_KEY);
+}
+
+// Returns { username, displayName, role } on success, or null
+function verifyCredentials_(username, password) {
+  if (!username || !password) return null;
+  var data = getUsersData_();
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][0]).toLowerCase() === String(username).toLowerCase()) {
       var storedHash = data[i][1];
@@ -519,11 +586,204 @@ function addUser_(payload) {
     payload.newDisplayName || payload.newUsername,
     payload.newRole === 'Admin' ? 'Admin' : 'User'
   ]);
+  invalidateUsersCache_();
   appendLog_(getTripSS_(), {
     timestamp: new Date(),
     vehicleId: '',
     action:    'User created: ' + payload.newUsername + ' (' + (payload.newRole === 'Admin' ? 'Admin' : 'User') + ')',
     user:      payload.username || 'Unknown',
+    note:      ''
+  });
+  return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true })));
+}
+
+// ================================================================
+// TRIPS — Trips + TripAccommodations (both live in TRIPS_SS_ID)
+// ================================================================
+function getOrCreateTripsSheet_() {
+  var ss = getTripSS_();
+  var sh = ss.getSheetByName(SHEET_TRIPS);
+  if (!sh) {
+    sh = ss.insertSheet(SHEET_TRIPS);
+    sh.appendRow(['Trip ID', 'Timestamp', 'Requester', 'Coworkers', 'Destination City', 'Departure Date', 'Return Date', 'Needs Hotel', 'Notes', 'Status']);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function getOrCreateTripNightsSheet_() {
+  var ss = getTripSS_();
+  var sh = ss.getSheetByName(SHEET_TRIP_NIGHTS);
+  if (!sh) {
+    sh = ss.insertSheet(SHEET_TRIP_NIGHTS);
+    sh.appendRow(['Trip ID', 'Night Date', 'City']);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+// Bulk read — both sheets fetched into memory in one call each, so overlap/
+// double-booking checks (Phase 2 of the trips feature) can just be an in-memory
+// filter later, not a fresh sheet read.
+function getTrips_() {
+  var ss = getTripSS_();
+
+  var tSh = ss.getSheetByName(SHEET_TRIPS);
+  var trips = [];
+  if (tSh) {
+    var tData = tSh.getDataRange().getValues();
+    if (tData.length >= 2) {
+      var tHeaders = tData[0];
+      trips = tData.slice(1).map(function(row, i) {
+        var obj = { _row: i + 2 };
+        tHeaders.forEach(function(h, j) {
+          var v = row[j];
+          if (v instanceof Date) v = Utilities.formatDate(v, Session.getScriptTimeZone(), 'dd/MM/yyyy');
+          obj[h] = v;
+        });
+        return obj;
+      });
+    }
+  }
+
+  var nSh = ss.getSheetByName(SHEET_TRIP_NIGHTS);
+  var nights = [];
+  if (nSh) {
+    var nData = nSh.getDataRange().getValues();
+    if (nData.length >= 2) {
+      var nHeaders = nData[0];
+      nights = nData.slice(1).map(function(row, i) {
+        var obj = { _row: i + 2 };
+        nHeaders.forEach(function(h, j) {
+          var v = row[j];
+          if (v instanceof Date) v = Utilities.formatDate(v, Session.getScriptTimeZone(), 'dd/MM/yyyy');
+          obj[h] = v;
+        });
+        return obj;
+      });
+    }
+  }
+
+  return cors_(ContentService.createTextOutput(JSON.stringify({
+    ok: true, trips: trips, nights: nights
+  })));
+}
+
+// Batched — writes all trip rows + all night rows in single setValues() calls,
+// not one round-trip per trip. Requester is always the verified logged-in user.
+function addTrips_(payload, user) {
+  if (!payload.trips || !payload.trips.length) {
+    return cors_(ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'No trips provided.' })));
+  }
+  var tSh = getOrCreateTripsSheet_();
+  var nSh = getOrCreateTripNightsSheet_();
+  var now = new Date();
+
+  var tripRows  = [];
+  var nightRows = [];
+  payload.trips.forEach(function(trip, i) {
+    var tripId = 'TRIP-' + Date.now() + '-' + i;
+    tripRows.push([
+      tripId,
+      now,
+      user.username,
+      (trip.coworkers || []).join(', '),
+      trip.destination || '',
+      trip.departureDate ? new Date(trip.departureDate) : '',
+      trip.returnDate   ? new Date(trip.returnDate)   : '',
+      trip.needsHotel ? 'Yes' : 'No',
+      trip.notes || '',
+      'Active'
+    ]);
+    if (trip.needsHotel && trip.nights && trip.nights.length) {
+      trip.nights.forEach(function(night) {
+        nightRows.push([tripId, night.date ? new Date(night.date) : '', night.city || '']);
+      });
+    }
+  });
+
+  var tStart = tSh.getLastRow() + 1;
+  tSh.getRange(tStart, 1, tripRows.length, tripRows[0].length).setValues(tripRows);
+
+  if (nightRows.length) {
+    var nStart = nSh.getLastRow() + 1;
+    nSh.getRange(nStart, 1, nightRows.length, nightRows[0].length).setValues(nightRows);
+  }
+
+  appendLog_(getTripSS_(), {
+    timestamp: now,
+    vehicleId: '',
+    action:    tripRows.length + ' trip(s) booked to ' + tripRows.map(function(r){ return r[4]; }).join(', '),
+    user:      user.username,
+    note:      ''
+  });
+
+  return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true, added: tripRows.length })));
+}
+
+// Edit an existing trip. Admin can edit any trip; a User can only edit their own.
+function updateTrip_(payload, user) {
+  var sh      = getOrCreateTripsSheet_();
+  var data    = sh.getDataRange().getValues();
+  var headers = data[0];
+  var reqCol  = headers.indexOf('Requester');
+  var rowIdx  = -1;
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(payload.tripId)) { rowIdx = i + 1; break; }
+  }
+  if (rowIdx === -1) {
+    return cors_(ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'Trip ID not found: ' + payload.tripId })));
+  }
+  var requester = data[rowIdx - 1][reqCol];
+  if (user.role !== 'Admin' && String(requester) !== String(user.username)) {
+    return cors_(ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'Unauthorized: not your trip.' })));
+  }
+
+  var editable = ['Coworkers', 'Destination City', 'Departure Date', 'Return Date', 'Needs Hotel', 'Notes'];
+  var changed  = [];
+  Object.keys(payload.fields || {}).forEach(function(fieldName) {
+    if (editable.indexOf(fieldName) === -1) return; // Trip ID / Requester / Status not editable here
+    var colIdx = headers.indexOf(fieldName);
+    if (colIdx === -1) return;
+    sh.getRange(rowIdx, colIdx + 1).setValue(payload.fields[fieldName]);
+    changed.push(fieldName);
+  });
+
+  appendLog_(getTripSS_(), {
+    timestamp: new Date(),
+    vehicleId: '',
+    action:    'Trip ' + payload.tripId + ' edited: ' + changed.join(', '),
+    user:      user.username,
+    note:      ''
+  });
+  return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true, updated: changed })));
+}
+
+// Soft delete — sets Status to "Cancelled" rather than removing the row, preserving
+// history. Hard delete stays Admin-only and isn't built yet (see open items).
+function cancelTrip_(payload, user) {
+  var sh        = getOrCreateTripsSheet_();
+  var data      = sh.getDataRange().getValues();
+  var headers   = data[0];
+  var reqCol    = headers.indexOf('Requester');
+  var statusCol = headers.indexOf('Status');
+  var rowIdx    = -1;
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(payload.tripId)) { rowIdx = i + 1; break; }
+  }
+  if (rowIdx === -1) {
+    return cors_(ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'Trip ID not found: ' + payload.tripId })));
+  }
+  var requester = data[rowIdx - 1][reqCol];
+  if (user.role !== 'Admin' && String(requester) !== String(user.username)) {
+    return cors_(ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'Unauthorized: not your trip.' })));
+  }
+  sh.getRange(rowIdx, statusCol + 1).setValue('Cancelled');
+  appendLog_(getTripSS_(), {
+    timestamp: new Date(),
+    vehicleId: '',
+    action:    'Trip ' + payload.tripId + ' cancelled',
+    user:      user.username,
     note:      ''
   });
   return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true })));
@@ -651,5 +911,6 @@ function seedFirstAdmin() {
   var salt = generateSalt_();
   var hash = hashPassword_('Rinci@2026', salt);
   sh.appendRow(['Saad', hash, salt, 'Saad', 'Admin']);
+  invalidateUsersCache_();
   Logger.log('Admin account "Saad" created.');
 }

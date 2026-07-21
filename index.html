@@ -164,6 +164,33 @@ body{font-family:var(--font);background:var(--bg);color:var(--t1);font-size:13px
 select.form-input{cursor:pointer}
 .form-hint{font-size:10px;color:var(--t3);margin-top:2px}
 
+/* Trip modal — sectioned "travel agency" layout */
+.trip-section{border:1px solid var(--bd);border-radius:var(--r-lg);padding:14px 16px;margin-bottom:12px;background:var(--bg)}
+.trip-section-hdr{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--blue-d);margin-bottom:12px}
+.trip-section-hdr .n{width:20px;height:20px;border-radius:50%;background:var(--blue);color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+
+/* Searchable combobox — used for destination + per-night hotel city */
+.ss-wrap{position:relative}
+.ss-list{position:absolute;top:calc(100% + 3px);left:0;right:0;background:var(--white);border:1px solid var(--bd);border-radius:var(--r);box-shadow:0 6px 20px rgba(0,0,0,.12);max-height:180px;overflow-y:auto;z-index:50;display:none}
+.ss-list.open{display:block}
+.ss-opt{padding:7px 10px;font-size:12px;cursor:pointer}
+.ss-opt:hover{background:var(--blue-l);color:var(--blue)}
+.ss-empty{padding:7px 10px;font-size:11px;color:var(--t3)}
+
+/* Searchable coworker multi-select */
+.cw-search{margin-bottom:6px}
+.cw-list{max-height:150px;overflow-y:auto;border:1px solid var(--bd);border-radius:var(--r);padding:4px;background:var(--white)}
+.cw-row{display:flex;align-items:center;gap:7px;font-size:12px;padding:5px 6px;border-radius:4px}
+.cw-row:hover{background:var(--blue-l)}
+.cw-count{font-size:10px;color:var(--t3);margin-top:4px}
+
+/* Draft / batch cards */
+.draft-card{border:1px solid var(--bd);border-radius:var(--r-lg);background:var(--white);padding:10px 12px;margin-bottom:8px;box-shadow:var(--shadow)}
+.draft-card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.draft-dest{font-size:12px;font-weight:600;color:var(--blue-d)}
+.draft-meta{font-size:10px;color:var(--t3);margin-top:3px;display:flex;gap:8px;flex-wrap:wrap}
+.draft-actions{display:flex;gap:4px;flex-shrink:0}
+
 /* LOG TABLE */
 .log-row-type{font-weight:500}
 .mono{font-family:var(--mono);font-size:11px}
@@ -625,45 +652,62 @@ select.form-input{cursor:pointer}
 
 <!-- TRIP MODAL -->
 <div class="overlay" id="tripOverlay">
-  <div class="modal" style="width:480px">
+  <div class="modal" style="width:560px">
     <div class="modal-hdr">
-      <div><div class="modal-title" id="tripModalTitle">New trip request</div></div>
+      <div><div class="modal-title" id="tripModalTitle">✈️ New trip request</div></div>
       <button class="modal-close" onclick="closeModal('tripOverlay')">×</button>
     </div>
     <div class="modal-body">
-      <div class="form-grid" style="grid-template-columns:1fr">
-        <div class="form-field">
-          <label class="form-label">Coworkers</label>
-          <div id="trip-coworkers-list" style="max-height:140px;overflow-y:auto;border:1px solid var(--bd);border-radius:6px;padding:6px"></div>
-        </div>
-        <div class="form-field">
-          <label class="form-label">Destination</label>
-          <select class="form-input" id="trip-destination"></select>
-        </div>
-        <div class="form-field" style="display:flex;gap:10px">
-          <div style="flex:1">
-            <label class="form-label">Departure</label>
-            <input class="form-input" type="date" id="trip-departure" onchange="rebuildTripNights()">
+
+      <div class="trip-section">
+        <div class="trip-section-hdr"><span class="n">1</span> Where &amp; when</div>
+        <div class="form-grid" style="grid-template-columns:1fr">
+          <div class="form-field">
+            <label class="form-label">Destination</label>
+            <div class="ss-wrap" id="trip-destination-wrap" data-ss="destination">
+              <input class="form-input ss-input" type="text" placeholder="Search destination…" autocomplete="off">
+              <input type="hidden" class="ss-value" id="trip-destination">
+              <div class="ss-list"></div>
+            </div>
           </div>
-          <div style="flex:1">
-            <label class="form-label">Return</label>
-            <input class="form-input" type="date" id="trip-return" onchange="rebuildTripNights()">
+          <div class="form-field" style="display:flex;gap:10px">
+            <div style="flex:1">
+              <label class="form-label">Departure</label>
+              <input class="form-input" type="date" id="trip-departure" onchange="rebuildTripNights()">
+            </div>
+            <div style="flex:1">
+              <label class="form-label">Return</label>
+              <input class="form-input" type="date" id="trip-return" onchange="rebuildTripNights()">
+            </div>
           </div>
-        </div>
-        <div class="form-field">
-          <label class="form-label" style="display:flex;align-items:center;gap:6px">
-            <input type="checkbox" id="trip-hotel" onchange="toggleTripHotel()"> Needs hotel
-          </label>
-        </div>
-        <div id="trip-nights-wrap" style="display:none">
-          <label class="form-label">Nights &amp; cities</label>
-          <div id="trip-nights-list"></div>
-        </div>
-        <div class="form-field">
-          <label class="form-label">Notes (optional)</label>
-          <input class="form-input" id="trip-notes" placeholder="e.g. Client visit">
         </div>
       </div>
+
+      <div class="trip-section">
+        <div class="trip-section-hdr"><span class="n">2</span> Travelers</div>
+        <div class="form-field">
+          <input class="form-input cw-search" type="text" id="trip-coworkers-search" placeholder="Search coworkers…" oninput="filterCoworkers(this.value)">
+          <div id="trip-coworkers-list" class="cw-list"></div>
+          <div class="cw-count" id="trip-coworkers-count">0 selected</div>
+        </div>
+      </div>
+
+      <div class="trip-section">
+        <div class="trip-section-hdr"><span class="n">3</span> Accommodation</div>
+        <label class="form-label" style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:12px">
+          <input type="checkbox" id="trip-hotel" onchange="toggleTripHotel()"> Needs hotel
+        </label>
+        <div id="trip-nights-wrap" style="display:none;margin-top:10px">
+          <label class="form-label">Nights &amp; cities</label>
+          <div id="trip-nights-list" style="display:flex;flex-direction:column;gap:8px;margin-top:6px"></div>
+        </div>
+      </div>
+
+      <div class="trip-section" style="margin-bottom:0">
+        <div class="trip-section-hdr"><span class="n">4</span> Notes</div>
+        <input class="form-input" id="trip-notes" placeholder="e.g. Client visit (optional)">
+      </div>
+
     </div>
     <div class="modal-foot">
       <button class="btn btn-outline" onclick="closeModal('tripOverlay')">Cancel</button>
@@ -936,6 +980,72 @@ let editingDraftIndex = null;
 function persistDrafts(){ try{ sessionStorage.setItem('trip_drafts', JSON.stringify(tripDrafts)); }catch(_){} }
 function toISODate(d){ if(!d) return ''; const p=d.split('/'); return p.length===3 ? p[2]+'-'+p[1]+'-'+p[0] : ''; }
 
+// ---- SEARCHABLE SELECT (type-to-filter combobox) ----
+// Event-delegated so it also works on per-night rows that get rebuilt dynamically.
+const SS_SOURCES = { destination: [], night: [] };
+
+function ssOptionsFor(key){ return SS_SOURCES[key] || []; }
+function ssRenderList(wrap, filter){
+  const key = wrap.dataset.ss;
+  const list = wrap.querySelector('.ss-list');
+  const f = (filter || '').toLowerCase();
+  const opts = ssOptionsFor(key).filter(o => o.toLowerCase().includes(f));
+  list.innerHTML = opts.length
+    ? opts.map(o => `<div class="ss-opt">${o}</div>`).join('')
+    : '<div class="ss-empty">No matches</div>';
+  list.classList.add('open');
+}
+function ssClose(wrap){ wrap.querySelector('.ss-list').classList.remove('open'); }
+function ssSetValue(wrap, val, opts){
+  opts = opts || {};
+  wrap.querySelector('.ss-input').value = val || '';
+  wrap.querySelector('.ss-value').value = val || '';
+  if (wrap.dataset.ss === 'night' && !opts.silent) {
+    wrap.dataset.manual = "1";
+    let found = false;
+    document.querySelectorAll('#trip-nights-list .ss-wrap').forEach(w => {
+      if (w === wrap) { found = true; return; }
+      if (found && !w.dataset.manual) ssSetValue(w, val, { silent: true });
+    });
+  }
+}
+function ssGetValue(wrap){ return wrap.querySelector('.ss-value').value; }
+function ssSetById(wrapId, val){ const w = document.getElementById(wrapId); if (w) ssSetValue(w, val, { silent: true }); }
+function ssGetById(wrapId){ const w = document.getElementById(wrapId); return w ? ssGetValue(w) : ''; }
+
+document.addEventListener('focusin', e => {
+  const wrap = e.target.closest('.ss-wrap');
+  if (wrap && e.target.classList.contains('ss-input')) ssRenderList(wrap, e.target.value);
+});
+document.addEventListener('input', e => {
+  const wrap = e.target.closest('.ss-wrap');
+  if (wrap && e.target.classList.contains('ss-input')) ssRenderList(wrap, e.target.value);
+});
+document.addEventListener('mousedown', e => {
+  const opt = e.target.closest('.ss-opt');
+  if (opt) {
+    const wrap = opt.closest('.ss-wrap');
+    ssSetValue(wrap, opt.textContent);
+    ssClose(wrap);
+    return;
+  }
+  if (!e.target.closest('.ss-wrap')) {
+    document.querySelectorAll('.ss-list.open').forEach(l => l.classList.remove('open'));
+  }
+});
+
+// ---- Coworker search filter (just hides/shows rows, doesn't touch checked state) ----
+function filterCoworkers(q){
+  const f = (q || '').toLowerCase();
+  document.querySelectorAll('#trip-coworkers-list .cw-row').forEach(row => {
+    row.style.display = row.dataset.name.toLowerCase().includes(f) ? '' : 'none';
+  });
+}
+function updateCoworkerCount(){
+  const n = document.querySelectorAll('#trip-coworkers-list input:checked').length;
+  document.getElementById('trip-coworkers-count').textContent = n + ' selected';
+}
+
 // ---- USER ----
 // Identity now comes from the login itself (sessionStorage), not a separately-typed name.
 function getUser(){ return sessionStorage.getItem('dash_displayname') || sessionStorage.getItem('dash_user') || ''; }
@@ -951,7 +1061,7 @@ let tripConfig = { coworkers: [], destinations: [] };
 async function fetchTripConfig() {
   const cached = sessionStorage.getItem('trip_config_cache');
   if (cached) {
-    try { tripConfig = JSON.parse(cached); return; } catch(_) {}
+    try { tripConfig = JSON.parse(cached); syncSSSources(); return; } catch(_) {}
   }
   try {
     const res  = await fetch(API_URL + '?action=getTripConfig'
@@ -966,6 +1076,11 @@ async function fetchTripConfig() {
   } catch(e) {
     console.error('Trip config fetch failed', e);
   }
+  syncSSSources();
+}
+function syncSSSources(){
+  SS_SOURCES.destination = tripConfig.destinations || [];
+  SS_SOURCES.night = tripConfig.destinations || [];
 }
 
 // ---- CLOCK ----
@@ -1805,13 +1920,11 @@ function openScheduleModal(){ openModal('schedOverlay'); }
 // ---- TRIP MODAL (create/edit) ----
 function renderTripCoworkerCheckboxes(){
   document.getElementById('trip-coworkers-list').innerHTML = (tripConfig.coworkers||[]).map(c=>
-    `<label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:3px 0">
-       <input type="checkbox" value="${c}"> ${c}
+    `<label class="cw-row" data-name="${c.replace(/"/g,'&quot;')}">
+       <input type="checkbox" value="${c}" onchange="updateCoworkerCount()"> ${c}
      </label>`).join('') || '<div class="form-hint">No coworkers found in Setup tab</div>';
-}
-function renderTripDestinationOptions(){
-  document.getElementById('trip-destination').innerHTML = '<option value="">Select destination…</option>' +
-    (tripConfig.destinations||[]).map(d=>`<option value="${d}">${d}</option>`).join('');
+  document.getElementById('trip-coworkers-search').value = '';
+  updateCoworkerCount();
 }
 function toggleTripHotel(){
   const on = document.getElementById('trip-hotel').checked;
@@ -1829,46 +1942,43 @@ function rebuildTripNights(){
   let cur = new Date(start);
   while(cur < end){ nights.push(new Date(cur)); cur.setDate(cur.getDate()+1); }
   if(!nights.length){ wrap.innerHTML = '<div class="form-hint">No nights (same-day trip)</div>'; return; }
-  const opts = (tripConfig.destinations||[]).map(d=>`<option value="${d}">${d}</option>`).join('');
   wrap.innerHTML = nights.map(n=>{
     const iso = n.toISOString().slice(0,10);
     const label = n.toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short'});
     return `<div class="form-field"><label class="form-label">${label}</label>
-      <select class="form-input" data-date="${iso}" onchange="carryForwardNight(this)">${opts}</select></div>`;
+      <div class="ss-wrap" data-ss="night" data-date="${iso}">
+        <input class="form-input ss-input" type="text" placeholder="Search city…" autocomplete="off">
+        <input type="hidden" class="ss-value">
+        <div class="ss-list"></div>
+      </div>
+    </div>`;
   }).join('');
-  const def = document.getElementById('trip-destination').value || '';
-  document.querySelectorAll('#trip-nights-list select').forEach(s=>s.value=def);
-}
-function carryForwardNight(sel){
-  let found=false;
-  document.querySelectorAll('#trip-nights-list select').forEach(s=>{
-    if(s===sel){ found=true; return; }
-    if(found && !s.dataset.manual) s.value = sel.value;
-  });
-  sel.dataset.manual = "1";
+  const def = ssGetById('trip-destination-wrap') || '';
+  document.querySelectorAll('#trip-nights-list .ss-wrap').forEach(w => ssSetValue(w, def, { silent: true }));
 }
 function openTripModal(tripId){
   editingTripId = tripId || null;
   editingDraftIndex = null;
   renderTripCoworkerCheckboxes();
-  renderTripDestinationOptions();
   if (tripId) {
     const t = trips.find(x=>x['Trip ID']===tripId);
     if(!t){ toast('Trip not found','err'); return; }
-    document.getElementById('tripModalTitle').textContent = 'Edit trip';
+    document.getElementById('tripModalTitle').textContent = '✈️ Edit trip';
     document.getElementById('tripSaveBtn').textContent = 'Save changes';
     const cw = (t['Coworkers']||'').split(',').map(s=>s.trim()).filter(Boolean);
     document.querySelectorAll('#trip-coworkers-list input').forEach(c=>c.checked = cw.includes(c.value));
-    document.getElementById('trip-destination').value = t['Destination City']||'';
+    updateCoworkerCount();
+    ssSetById('trip-destination-wrap', t['Destination City']||'');
     document.getElementById('trip-departure').value = toISODate(t['Departure Date']);
     document.getElementById('trip-return').value = toISODate(t['Return Date']);
     document.getElementById('trip-hotel').checked = t['Needs Hotel']==='Yes';
     document.getElementById('trip-notes').value = t['Notes']||'';
   } else {
-    document.getElementById('tripModalTitle').textContent = 'New trip request';
+    document.getElementById('tripModalTitle').textContent = '✈️ New trip request';
     document.getElementById('tripSaveBtn').textContent = 'Add to Batch';
     document.querySelectorAll('#trip-coworkers-list input').forEach(c=>c.checked=false);
-    document.getElementById('trip-destination').value = '';
+    updateCoworkerCount();
+    ssSetById('trip-destination-wrap', '');
     document.getElementById('trip-departure').value = '';
     document.getElementById('trip-return').value = '';
     document.getElementById('trip-hotel').checked = false;
@@ -1879,7 +1989,7 @@ function openTripModal(tripId){
 }
 function saveTripModal(){
   const coworkers = Array.from(document.querySelectorAll('#trip-coworkers-list input:checked')).map(c=>c.value);
-  const destination = document.getElementById('trip-destination').value;
+  const destination = ssGetById('trip-destination-wrap');
   const departureDate = document.getElementById('trip-departure').value;
   const returnDate = document.getElementById('trip-return').value;
   const needsHotel = document.getElementById('trip-hotel').checked;
@@ -1888,7 +1998,7 @@ function saveTripModal(){
   if(!departureDate || !returnDate){ toast('Select departure and return dates','err'); return; }
   if(new Date(returnDate) < new Date(departureDate)){ toast('Return date must be after departure date','err'); return; }
   const nights = [];
-  if(needsHotel) document.querySelectorAll('#trip-nights-list select').forEach(sel=>nights.push({date:sel.dataset.date, city:sel.value}));
+  if(needsHotel) document.querySelectorAll('#trip-nights-list .ss-wrap').forEach(w=>nights.push({date:w.dataset.date, city:ssGetValue(w)}));
   const tripObj = { coworkers, destination, departureDate, returnDate, needsHotel, notes, nights };
 
   if (editingTripId) {
@@ -1922,17 +2032,30 @@ async function saveTripEdit(tripId, tripObj){
 function editDraft(i){
   editingTripId = null; editingDraftIndex = i;
   const d = tripDrafts[i];
-  renderTripCoworkerCheckboxes(); renderTripDestinationOptions();
-  document.getElementById('tripModalTitle').textContent = 'Edit draft trip';
+  renderTripCoworkerCheckboxes();
+  document.getElementById('tripModalTitle').textContent = '✈️ Edit draft trip';
   document.getElementById('tripSaveBtn').textContent = 'Update draft';
   document.querySelectorAll('#trip-coworkers-list input').forEach(c=>c.checked = d.coworkers.includes(c.value));
-  document.getElementById('trip-destination').value = d.destination;
+  updateCoworkerCount();
+  ssSetById('trip-destination-wrap', d.destination);
   document.getElementById('trip-departure').value = d.departureDate;
   document.getElementById('trip-return').value = d.returnDate;
   document.getElementById('trip-hotel').checked = d.needsHotel;
   document.getElementById('trip-notes').value = d.notes || '';
   toggleTripHotel();
+  if (d.needsHotel && d.nights && d.nights.length) {
+    d.nights.forEach(n => {
+      const w = document.querySelector(`#trip-nights-list .ss-wrap[data-date="${n.date}"]`);
+      if (w) ssSetValue(w, n.city, { silent: true });
+    });
+  }
   openModal('tripOverlay');
+}
+function duplicateDraft(i){
+  const clone = JSON.parse(JSON.stringify(tripDrafts[i]));
+  tripDrafts.splice(i + 1, 0, clone);
+  persistDrafts(); renderDraftPanel();
+  toast('Duplicated — edit the traveler on the new card', 'ok');
 }
 function removeDraft(i){ tripDrafts.splice(i,1); persistDrafts(); renderDraftPanel(); }
 function renderDraftPanel(){
@@ -1940,21 +2063,26 @@ function renderDraftPanel(){
   if(!tripDrafts.length){ panel.style.display='none'; panel.innerHTML=''; return; }
   panel.style.display='';
   panel.innerHTML = `
-    <div class="modal-sub" style="margin-bottom:6px;font-weight:600">Pending Requests (${tripDrafts.length})</div>
-    <div class="m-list">
-      ${tripDrafts.map((d,i)=>`
-        <div class="m-item">
-          <div class="m-info">
-            <div class="m-veh">${d.coworkers.join(', ')||'—'} · ${d.destination}</div>
-            <div class="m-meta">${d.departureDate} → ${d.returnDate} · ${d.needsHotel?'🏨':'🚫'}</div>
+    <div class="modal-sub" style="margin-bottom:8px;font-weight:600">🧳 Pending Requests (${tripDrafts.length})</div>
+    ${tripDrafts.map((d,i)=>`
+      <div class="draft-card">
+        <div class="draft-card-top">
+          <div>
+            <div class="draft-dest">${d.destination||'—'}</div>
+            <div class="draft-meta">
+              <span>👥 ${d.coworkers.join(', ')||'—'}</span>
+              <span>📅 ${d.departureDate} → ${d.returnDate}</span>
+              <span>${d.needsHotel?'🏨 Hotel':'🚫 No hotel'}</span>
+            </div>
           </div>
-          <div class="m-right" style="white-space:nowrap">
-            <button class="act-btn oil" onclick="editDraft(${i})">✏</button>
-            <button class="act-btn diag" onclick="removeDraft(${i})">🗑</button>
+          <div class="draft-actions">
+            <button class="act-btn" onclick="editDraft(${i})" title="Edit">✏</button>
+            <button class="act-btn" onclick="duplicateDraft(${i})" title="Duplicate">📋</button>
+            <button class="act-btn" onclick="removeDraft(${i})" title="Remove">🗑</button>
           </div>
-        </div>`).join('')}
-    </div>
-    <button class="btn btn-ok" style="margin-top:8px" onclick="submitAllDrafts()">Submit All (${tripDrafts.length})</button>`;
+        </div>
+      </div>`).join('')}
+    <button class="btn btn-ok" style="width:100%;margin-top:4px" onclick="submitAllDrafts()">Submit All (${tripDrafts.length})</button>`;
 }
 async function submitAllDrafts(){
   if(!tripDrafts.length) return;

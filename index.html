@@ -326,6 +326,7 @@ select.form-input{cursor:pointer}
       <div class="sync-dot" id="syncDot"></div>
       <span class="sync-lbl" id="syncLbl">Connecting…</span>
       <button class="sync-btn" onclick="fetchData(true)">↻ Refresh</button>
+      <button class="sync-btn" id="usersBtn" onclick="openUsersPanel()" title="Manage users" style="padding:4px 10px;display:none">👥 Users</button>
       <button class="sync-btn" onclick="lockSession()" title="Lock session" style="padding:4px 10px">🔒</button>
       <button class="user-badge" id="userBadge" title="Logged in — use the lock button to switch accounts">👤 <span id="userName">…</span></button>
     </div>
@@ -863,6 +864,44 @@ select.form-input{cursor:pointer}
     </div>
   </div>
 </div>
+
+<div class="overlay" id="usersOverlay">
+  <div class="modal" style="width:480px">
+    <div class="modal-hdr">
+      <div>
+        <div class="modal-title">👥 Manage Users</div>
+        <div class="modal-sub">Admin only — create accounts for new team members</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('usersOverlay')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="trip-section">
+        <div class="trip-section-hdr"><span class="n">1</span> New user</div>
+        <div class="form-grid" style="grid-template-columns:1fr 1fr">
+          <div class="form-field"><label class="form-label">Username *</label><input class="form-input" id="uf-username" placeholder="e.g. jdoe"></div>
+          <div class="form-field"><label class="form-label">Display name</label><input class="form-input" id="uf-displayname" placeholder="e.g. John Doe"></div>
+          <div class="form-field"><label class="form-label">Temporary password *</label><input class="form-input" type="text" id="uf-password" placeholder="e.g. TempPass123!"></div>
+          <div class="form-field">
+            <label class="form-label">Role</label>
+            <select class="form-input" id="uf-role">
+              <option value="User">User</option>
+              <option value="Admin">Admin</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn btn-primary" style="margin-top:10px;width:100%" onclick="createUser()">+ Create user</button>
+      </div>
+
+      <div class="trip-section" style="margin-bottom:0">
+        <div class="trip-section-hdr"><span class="n">2</span> Existing users</div>
+        <div id="usersList" class="cw-list" style="max-height:220px"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-outline" onclick="closeModal('usersOverlay')">Close</button>
+    </div>
+  </div>
+</div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
 // ================================================================
@@ -944,6 +983,46 @@ function lockSession(){
   toast('Session locked', 'ok');
 }
 function isAdmin(){ return sessionStorage.getItem('dash_role') === 'Admin'; }
+
+// ---- MANAGE USERS (Admin only) ----
+function openUsersPanel(){
+  document.getElementById('uf-username').value = '';
+  document.getElementById('uf-displayname').value = '';
+  document.getElementById('uf-password').value = '';
+  document.getElementById('uf-role').value = 'User';
+  document.getElementById('usersList').innerHTML = '<div class="form-hint">Loading…</div>';
+  openModal('usersOverlay');
+  fetchUsers();
+}
+async function fetchUsers(){
+  const res = await postAction({ action: 'getUsers' });
+  if(!res) return;
+  renderUsersList(res.users || []);
+}
+function renderUsersList(list){
+  const box = document.getElementById('usersList');
+  if(!list.length){ box.innerHTML = '<div class="form-hint">No users found</div>'; return; }
+  box.innerHTML = list.map(u=>`
+    <div class="cw-row" style="justify-content:space-between">
+      <span>${u.displayName} <span style="color:var(--t3)">(${u.username})</span></span>
+      <span class="badge ${u.role==='Admin'?'b-ok':'b-gray'}">${u.role}</span>
+    </div>`).join('');
+}
+async function createUser(){
+  const newUsername = document.getElementById('uf-username').value.trim();
+  const newDisplayName = document.getElementById('uf-displayname').value.trim();
+  const newPassword = document.getElementById('uf-password').value;
+  const newRole = document.getElementById('uf-role').value;
+  if(!newUsername || !newPassword){ toast('Username and temporary password are required','err'); return; }
+  const res = await postAction({ action:'addUser', newUsername, newDisplayName, newPassword, newRole });
+  if(!res) return;
+  toast('User created','ok');
+  document.getElementById('uf-username').value = '';
+  document.getElementById('uf-displayname').value = '';
+  document.getElementById('uf-password').value = '';
+  document.getElementById('uf-role').value = 'User';
+  fetchUsers();
+}
 // ================================================================
 const OIL_INTERVAL = 15000;
 function oilInterval(v){
@@ -1052,6 +1131,7 @@ function updateCoworkerCount(){
 function getUser(){ return sessionStorage.getItem('dash_displayname') || sessionStorage.getItem('dash_user') || ''; }
 function initUser(){
   document.getElementById('userName').textContent = getUser();
+  document.getElementById('usersBtn').style.display = isAdmin() ? '' : 'none';
   fetchTripConfig();
 }
 
@@ -2176,7 +2256,8 @@ const POST_ACTION_LABELS = {
   updateMaintenanceCell: 'Saving note…',
   addVehicle: 'Adding vehicle…',
   updateVehicle: 'Saving vehicle…',
-  addUser: 'Creating user…'
+  addUser: 'Creating user…',
+  getUsers: 'Loading users…'
 };
 
 async function postAction(payload) {

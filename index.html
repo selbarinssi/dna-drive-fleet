@@ -183,7 +183,7 @@ select.form-input{cursor:pointer}
 .toast.warn{background:var(--warn)}
 
 /* LOADING */
-.loading-overlay{position:fixed;inset:0;background:rgba(255,255,255,.8);z-index:400;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px}
+.loading-overlay{position:fixed;inset:0;background:rgba(255,255,255,.55);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);z-index:400;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px}
 .spinner{width:32px;height:32px;border:3px solid var(--bd);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 
@@ -283,7 +283,7 @@ select.form-input{cursor:pointer}
 <!-- LOADING -->
 <div class="loading-overlay" id="loadingOverlay">
   <div class="spinner"></div>
-  <div style="font-size:13px;color:var(--t2)">Loading fleet data…</div>
+  <div style="font-size:13px;color:var(--t2)" id="loadingOverlayMsg">Loading fleet data…</div>
 </div>
 
 <!-- HEADER -->
@@ -985,11 +985,21 @@ function setSyncState(state, msg){
   lbl.textContent = msg;
 }
 
+// ---- BUSY OVERLAY (blocking ring + blur — explicit actions only, never the poll) ----
+function showBusy(msg){
+  document.getElementById('loadingOverlayMsg').textContent = msg || 'Working…';
+  document.getElementById('loadingOverlay').style.display = 'flex';
+}
+function hideBusy(){
+  document.getElementById('loadingOverlay').style.display = 'none';
+}
+
 async function fetchData(manual) {
   // If manual refresh and we already have data, render immediately from memory
   // so the UI stays responsive while the fetch runs in background
   if (manual && vehicles.length > 0) {
     setSyncState('stale', 'Refreshing…');
+    showBusy('Refreshing…');
     rebuildAll();
   } else if (!manual) {
     setSyncState('stale', 'Refreshing…');
@@ -2028,9 +2038,22 @@ async function saveEditSchedule() {
   }
 }
 // ---- POST ----
+const POST_ACTION_LABELS = {
+  addTrips: 'Submitting trip(s)…',
+  updateTrip: 'Saving changes…',
+  cancelTrip: 'Cancelling trip…',
+  markMaintenanceDone: 'Updating…',
+  deleteMaintenanceRow: 'Deleting…',
+  updateMaintenanceCell: 'Saving note…',
+  addVehicle: 'Adding vehicle…',
+  updateVehicle: 'Saving vehicle…',
+  addUser: 'Creating user…'
+};
+
 async function postAction(payload) {
+  const action = payload.action;
+  showBusy(POST_ACTION_LABELS[action] || 'Saving…');
   try {
-    const action = payload.action;
     payload.username = sessionStorage.getItem('dash_user') || '';
     payload.password = sessionStorage.getItem('dash_pass') || ''; 
     
@@ -2057,6 +2080,8 @@ async function postAction(payload) {
     toast('Network error. Check connection.', 'err');
     console.error(e);
     return null;
+  } finally {
+    hideBusy();
   }
 }
 

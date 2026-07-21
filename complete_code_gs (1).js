@@ -34,7 +34,7 @@ function doGet(e) {
     'getVehicles', 'getAll', 'getLogs', 'getMaintenanceLog', 'getDailyChecks',
     'updateVehicle', 'logOilChange', 'logDiagnostic', 'logMaintenance', 'addVehicle',
     'markMaintenanceDone', 'deleteMaintenanceRow', 'updateMaintenanceCell', 'updateMaintenanceRow',
-    'addUser', 'getTripConfig', 'getTrips', 'addTrips', 'updateTrip', 'cancelTrip'
+    'addUser', 'getUsers', 'getTripConfig', 'getTrips', 'addTrips', 'updateTrip', 'cancelTrip'
   ];
 
   if (dashboardActions.indexOf(action) !== -1) {
@@ -90,6 +90,7 @@ function doGet(e) {
         })));
       }
       if (action === 'addUser')              return addUser_(payload);
+      if (action === 'getUsers')             return getUsers_();
       if (action === 'updateVehicle')        return updateVehicle_(payload);
       if (action === 'logOilChange')         return logOilChange_(payload);
       if (action === 'logDiagnostic')        return logDiagnostic_(payload);
@@ -565,6 +566,23 @@ function authenticateUser_(username, password) {
   })));
 }
 
+// Admin-only — lists users for the Manage Users panel. Never exposes the
+// password hash or salt, only the fields the UI actually needs.
+function getUsers_() {
+  var sh   = getOrCreateUsersSheet_();
+  var data = sh.getDataRange().getValues();
+  var users = [];
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    users.push({
+      username:    data[i][0],
+      displayName: data[i][3] || data[i][0],
+      role:        data[i][4] || 'User'
+    });
+  }
+  return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true, users: users })));
+}
+
 // Admin-only — called after doGet() has already confirmed the caller's role === 'Admin'
 function addUser_(payload) {
   if (!payload.newUsername || !payload.newPassword) {
@@ -669,6 +687,25 @@ function getTrips_() {
   })));
 }
 
+// Builds a short, human-readable Trip ID like "CMN-20260720" — first 3 letters
+// of the destination + the departure date. Suffixed with -2, -3... if the same
+// destination+date combo is already used (e.g. 10 travelers, same trip, same day).
+function generateTripId_(destination, departureDate, existingIds) {
+  var code = String(destination || 'TRP').toUpperCase().replace(/[^A-Z]/g, '').substring(0, 3);
+  if (!code) code = 'TRP';
+  var d = departureDate ? new Date(departureDate) : new Date();
+  var dateStr = Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyyMMdd');
+  var base = code + '-' + dateStr;
+  var id = base;
+  var n = 1;
+  while (existingIds[id]) {
+    n++;
+    id = base + '-' + n;
+  }
+  existingIds[id] = true;
+  return id;
+}
+
 // Batched — writes all trip rows + all night rows in single setValues() calls,
 // not one round-trip per trip. Requester is always the verified logged-in user.
 function addTrips_(payload, user) {
@@ -679,10 +716,16 @@ function addTrips_(payload, user) {
   var nSh = getOrCreateTripNightsSheet_();
   var now = new Date();
 
+  var existingTripIds = {};
+  var lastTripRow = tSh.getLastRow();
+  if (lastTripRow >= 2) {
+    tSh.getRange(2, 1, lastTripRow - 1, 1).getValues().forEach(function(r){ existingTripIds[r[0]] = true; });
+  }
+
   var tripRows  = [];
   var nightRows = [];
   payload.trips.forEach(function(trip, i) {
-    var tripId = 'TRIP-' + Date.now() + '-' + i;
+    var tripId = generateTripId_(trip.destination, trip.departureDate, existingTripIds);
     tripRows.push([
       tripId,
       now,

@@ -310,9 +310,8 @@ select.form-input{cursor:pointer}
 .print-week-hdr{ font-size:16px; font-weight:700; color:#0047AB; margin-bottom:14px; padding-bottom:8px; border-bottom:2px solid #0047AB }
 .print-trip-block{ margin-bottom:18px; page-break-inside:avoid }
 .print-trip-hdr{ font-size:13px; margin-bottom:6px }
-.print-trip-tbl{ width:100%; border-collapse:collapse; font-size:12px }
-.print-trip-tbl th, .print-trip-tbl td{ border:1px solid #999; padding:6px 8px; text-align:left }
-.print-sig-line{ min-width:120px }
+.print-trip-tbl{ width:100%; border-collapse:collapse; font-size:12px; table-layout:fixed }
+.print-trip-tbl th, .print-trip-tbl td{ border:1px solid #999; padding:6px 8px; text-align:left; height:30px; vertical-align:middle; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 @media print {
   body.printing-week .hdr, body.printing-week .tabs, body.printing-week .sync-bar,
   body.printing-week .clock, body.printing-week .user-badge, body.printing-week .overlay,
@@ -1701,11 +1700,12 @@ function renderTrips(){
     const isGroupStart = p['Trip ID'] !== lastTripId;
     lastTripId = p['Trip ID'];
 
+    const hasActive = participants.some(x => x['Trip ID'] === p['Trip ID'] && (x['Status'] === 'Submitted' || x['Status'] === 'Available'));
     const cwSafe = String(p['Coworker']).replace(/'/g, "\\'");
-    const groupActions = (isGroupStart && canManage)
+    const groupActions = (isGroupStart && canManage && hasActive)
       ? `<button class="act-btn oil" onclick="openTripModal('${p['Trip ID']}')" title="Edit destination/dates/hotel/notes">Edit</button>
          <button class="act-btn diag" onclick="cancelTripPrompt('${p['Trip ID']}')" title="Cancel every coworker on this trip">Cancel trip</button><br>`
-      : '';
+      : (isGroupStart ? '<span class="form-hint">✓ Settled</span>' : '');
 
     let lineActions = '—';
     if (canManage && p['Status'] === 'Available') {
@@ -1818,6 +1818,7 @@ async function printWeekBatch(){
           (${g.trip['Start'] || ''} → ${g.trip['End'] || ''})
         </div>
         <table class="print-trip-tbl">
+          <colgroup><col style="width:28%"><col style="width:10%"><col style="width:14%"><col style="width:14%"><col style="width:34%"></colgroup>
           <thead><tr><th>Coworker</th><th>#Days</th><th>Expenses</th><th>Status</th><th>Signature</th></tr></thead>
           <tbody>
             ${g.participants.map(p => `<tr>

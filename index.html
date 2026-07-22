@@ -304,6 +304,24 @@ select.form-input{cursor:pointer}
   /* Hide the print button itself */
   #printBtn { display: none !important; }
 }
+
+/* WEEK PRINT — trip payment sheets, signed by hand when money is handed over */
+#weekPrintArea{ display:none }
+.print-week-hdr{ font-size:16px; font-weight:700; color:#0047AB; margin-bottom:14px; padding-bottom:8px; border-bottom:2px solid #0047AB }
+.print-trip-block{ margin-bottom:18px; page-break-inside:avoid }
+.print-trip-hdr{ font-size:13px; margin-bottom:6px }
+.print-trip-tbl{ width:100%; border-collapse:collapse; font-size:12px }
+.print-trip-tbl th, .print-trip-tbl td{ border:1px solid #999; padding:6px 8px; text-align:left }
+.print-sig-line{ min-width:120px }
+@media print {
+  body.printing-week .hdr, body.printing-week .tabs, body.printing-week .sync-bar,
+  body.printing-week .clock, body.printing-week .user-badge, body.printing-week .overlay,
+  body.printing-week .toast-wrap, body.printing-week .filters, body.printing-week .row-tools,
+  body.printing-week .page, body.printing-week #alertBanner { display:none !important }
+  body.printing-week #page-overview{ display:none !important }
+  body.printing-week #page-overview::before { display:none !important }
+  body.printing-week #weekPrintArea{ display:block !important; background:#fff; padding:8px }
+}
 </style>
 </head>
 <body>
@@ -522,26 +540,34 @@ select.form-input{cursor:pointer}
 <!-- TRIPS -->
 <div class="page" id="page-trips">
   <div class="filters" id="tripsFilters">
-    <button class="fbtn active" onclick="filterTrips('active',this)">Active</button>
-    <button class="fbtn" onclick="filterTrips('cancelled',this)">Cancelled</button>
-    <button class="fbtn" onclick="filterTrips('all',this)">All</button>
+    <button class="fbtn active" onclick="filterTrips('all',this)">All</button>
+    <button class="fbtn" onclick="filterTrips('Submitted',this)">Submitted</button>
+    <button class="fbtn" onclick="filterTrips('Available',this)">Available</button>
+    <button class="fbtn" onclick="filterTrips('Paid',this)">Paid</button>
+    <button class="fbtn" onclick="filterTrips('Cancelled',this)">Cancelled</button>
   </div>
   <div class="row-tools">
     <button class="btn btn-primary" onclick="openTripModal()">+ New Trip Request</button>
     <input class="srch" type="text" id="tripsSearch" placeholder="Search requester, coworker, destination…" oninput="renderTrips()">
     <span class="count-lbl" id="tripsCount"></span>
+    <span style="flex:1"></span>
+    <input class="form-input" type="week" id="printWeekInput" style="width:150px" title="Pick a week to print">
+    <button class="btn btn-outline" onclick="printWeekBatch()">🖨 Print Week</button>
   </div>
   <div id="tripDraftPanel" style="display:none;margin-bottom:12px"></div>
   <div class="tbl-wrap">
     <table class="tbl">
       <thead><tr>
-        <th>Trip ID</th><th>Requester</th><th>Coworkers</th><th>Destination</th>
-        <th>Departure</th><th>Return</th><th>Hotel</th><th>Status</th><th>Actions</th>
+        <th>Trip ID</th><th>Coworker</th><th>Destination</th>
+        <th>Start</th><th>End</th><th>#Days</th><th>Expenses</th><th>Status</th><th>Paid Date</th><th>Actions</th>
       </tr></thead>
       <tbody id="tripsTbody"></tbody>
     </table>
   </div>
 </div>
+
+<!-- WEEK PRINT AREA (hidden on screen, shown only in print mode via body.printing-week) -->
+<div id="weekPrintArea"></div>
 
 </div><!-- end content -->
 
@@ -685,13 +711,17 @@ select.form-input{cursor:pointer}
         </div>
       </div>
 
-      <div class="trip-section">
+      <div class="trip-section" id="trip-section-travelers">
         <div class="trip-section-hdr"><span class="n">2</span> Travelers</div>
         <div class="form-field">
           <input class="form-input cw-search" type="text" id="trip-coworkers-search" placeholder="Search coworkers…" oninput="filterCoworkers(this.value)">
           <div id="trip-coworkers-list" class="cw-list"></div>
           <div class="cw-count" id="trip-coworkers-count">0 selected</div>
         </div>
+      </div>
+      <div class="trip-section" id="trip-section-travelers-locked" style="display:none">
+        <div class="trip-section-hdr"><span class="n">2</span> Travelers</div>
+        <div class="form-hint">Travelers can't be edited after submission. Cancel an individual coworker's line from the trips table instead, or cancel the whole trip and re-submit.</div>
       </div>
 
       <div class="trip-section">
@@ -1051,8 +1081,9 @@ let usageFrom = null;
 let usageTo = null;
 
 let trips = [];
+let participants = [];
 let tripNights = [];
-let tripsFilter = 'active';
+let tripsFilter = 'all';
 let tripsLoaded = false;
 let tripDrafts = JSON.parse(sessionStorage.getItem('trip_drafts') || '[]');
 let editingTripId = null;
@@ -1601,8 +1632,15 @@ async function updateNoteColumn(row, newText) {
 // ---- TRIPS ----
 function isOwner(trip){ return sessionStorage.getItem('dash_user') === trip['Requester']; }
 function tripStatusBadge(status){
-  return status === 'Cancelled' ? {label:'Cancelled', cls:'b-gray'} : {label:'Active', cls:'b-ok'};
+  const map = {
+    Submitted: {label:'Submitted', cls:'b-gray'},
+    Available: {label:'Available', cls:'b-info'},
+    Paid:      {label:'Paid',      cls:'b-ok'},
+    Cancelled: {label:'Cancelled', cls:'b-gray'}
+  };
+  return map[status] || {label: status || '—', cls:'b-gray'};
 }
+function tripsById_(){ const m = {}; trips.forEach(t => m[t['Trip ID']] = t); return m; }
 
 async function fetchTrips(){
   try {
@@ -1613,6 +1651,7 @@ async function fetchTrips(){
     const data = await res.json();
     if (data.ok) {
       trips = data.trips;
+      participants = data.participants;
       tripNights = data.nights;
       tripsLoaded = true;
       renderTrips();
@@ -1632,47 +1671,163 @@ function filterTrips(f, el){
   renderTrips();
 }
 
+// One row per coworker (TripParticipants). Rows sharing a Trip ID are sorted
+// together and visually grouped (top border + Trip ID/Requester shown once,
+// on the first row of the group) — Edit/Cancel-trip act on the whole group,
+// Mark Paid/Cancel act on that one coworker's line.
 function renderTrips(){
   const q = (document.getElementById('tripsSearch').value || '').toLowerCase();
-  const rows = trips.filter(t => {
-    if (tripsFilter === 'active'    && t['Status'] === 'Cancelled') return false;
-    if (tripsFilter === 'cancelled' && t['Status'] !== 'Cancelled') return false;
-    if (q && !`${t['Requester']} ${t['Coworkers']} ${t['Destination City']}`.toLowerCase().includes(q)) return false;
+  const tMap = tripsById_();
+
+  const rows = participants.filter(p => {
+    if (tripsFilter !== 'all' && p['Status'] !== tripsFilter) return false;
+    const t = tMap[p['Trip ID']] || {};
+    if (q && !`${t['Requester']||''} ${p['Coworker']||''} ${p['Destination']||''}`.toLowerCase().includes(q)) return false;
     return true;
-  }).sort((a,b) => new Date(b['Timestamp']) - new Date(a['Timestamp']));
+  }).sort((a,b) => {
+    const ta = tMap[a['Trip ID']] || {}, tb = tMap[b['Trip ID']] || {};
+    const byTrip = new Date(tb['Timestamp']||0) - new Date(ta['Timestamp']||0);
+    return byTrip !== 0 ? byTrip : String(a['Coworker']).localeCompare(String(b['Coworker']));
+  });
 
   renderDraftPanel();
-  document.getElementById('tripsCount').textContent = rows.length + ' trip(s)';
-  document.getElementById('tripsTbody').innerHTML = rows.map(t => {
-    const s = tripStatusBadge(t['Status']);
-    const canManage = isAdmin() || isOwner(t);
-    const actions = t['Status'] === 'Cancelled' ? '—' : (canManage
-      ? `<button class="act-btn oil" onclick="openTripModal('${t['Trip ID']}')">Edit</button>
-         <button class="act-btn diag" onclick="cancelTripPrompt('${t['Trip ID']}')">Cancel</button>`
-      : '—');
-    return `<tr>
-      <td class="mono" style="font-size:11px">${t['Trip ID']}</td>
-      <td>${t['Requester']}</td>
-      <td>${t['Coworkers']}</td>
-      <td>${t['Destination City']}</td>
-      <td>${t['Departure Date']}</td>
-      <td>${t['Return Date']}</td>
-      <td>${t['Needs Hotel'] === 'Yes' ? '🏨' : '🚫'}</td>
+  document.getElementById('tripsCount').textContent = rows.length + ' line(s)';
+
+  let lastTripId = null;
+  document.getElementById('tripsTbody').innerHTML = rows.map(p => {
+    const t = tMap[p['Trip ID']] || {};
+    const s = tripStatusBadge(p['Status']);
+    const canManage = isAdmin() || sessionStorage.getItem('dash_user') === t['Requester'];
+    const isGroupStart = p['Trip ID'] !== lastTripId;
+    lastTripId = p['Trip ID'];
+
+    const cwSafe = String(p['Coworker']).replace(/'/g, "\\'");
+    const groupActions = (isGroupStart && canManage)
+      ? `<button class="act-btn oil" onclick="openTripModal('${p['Trip ID']}')" title="Edit destination/dates/hotel/notes">Edit</button>
+         <button class="act-btn diag" onclick="cancelTripPrompt('${p['Trip ID']}')" title="Cancel every coworker on this trip">Cancel trip</button><br>`
+      : '';
+
+    let lineActions = '—';
+    if (canManage && p['Status'] === 'Available') {
+      lineActions = `<button class="act-btn oil" onclick="markPaid('${p['Trip ID']}','${cwSafe}')">✓ Mark Paid</button>
+                      <button class="act-btn diag" onclick="cancelParticipantPrompt('${p['Trip ID']}','${cwSafe}')">Cancel</button>`;
+    } else if (canManage && p['Status'] === 'Submitted') {
+      lineActions = `<button class="act-btn diag" onclick="cancelParticipantPrompt('${p['Trip ID']}','${cwSafe}')">Cancel</button>`;
+    }
+
+    return `<tr${isGroupStart ? ' style="border-top:2px solid var(--bd)"' : ''}>
+      <td class="mono" style="font-size:11px">${isGroupStart ? p['Trip ID'] + '<div class="form-hint" style="margin:0">'+(t['Requester']||'')+'</div>' : ''}</td>
+      <td>${p['Coworker']}</td>
+      <td>${p['Destination']}</td>
+      <td>${p['Start']}</td>
+      <td>${p['End']}</td>
+      <td>${p['#Days']}</td>
+      <td>${p['Expenses']}</td>
       <td><span class="badge ${s.cls}">${s.label}</span></td>
-      <td style="white-space:nowrap">${actions}</td>
+      <td>${p['Paid Date'] || '—'}</td>
+      <td style="white-space:nowrap">${groupActions}${lineActions}</td>
     </tr>`;
   }).join('');
 }
 
+// Cancels every not-yet-terminal coworker on the trip (Paid rows are left alone).
 async function cancelTripPrompt(tripId){
-  if (!confirm('Cancel this trip? This keeps the record but marks it cancelled.')) return;
+  if (!confirm('Cancel this whole trip? Anyone already Paid keeps their record; everyone else moves to Cancelled.')) return;
   const res = await postAction({ action: 'cancelTrip', tripId });
   if (!res) return;
-  const t = trips.find(x => x['Trip ID'] === tripId);
-  if (t) t['Status'] = 'Cancelled';
+  participants.filter(p => p['Trip ID'] === tripId && p['Status'] !== 'Paid' && p['Status'] !== 'Cancelled')
+              .forEach(p => p['Status'] = 'Cancelled');
   renderTrips();
   toast('Trip cancelled', 'ok');
 }
+
+// Cancels just one coworker's line, leaving the rest of the group untouched.
+async function cancelParticipantPrompt(tripId, coworker){
+  if (!confirm('Cancel ' + coworker + '’s line on this trip?')) return;
+  const res = await postAction({ action: 'cancelParticipant', tripId, coworker });
+  if (!res) return;
+  const p = participants.find(x => x['Trip ID'] === tripId && x['Coworker'] === coworker);
+  if (p) p['Status'] = 'Cancelled';
+  renderTrips();
+  toast('Cancelled', 'ok');
+}
+
+// Available -> Paid only (enforced server-side too). Stamps Paid Date.
+async function markPaid(tripId, coworker){
+  if (!confirm('Confirm you handed the money to ' + coworker + '? This records today\'s date.')) return;
+  const res = await postAction({ action: 'markPaid', tripId, coworker });
+  if (!res) return;
+  const p = participants.find(x => x['Trip ID'] === tripId && x['Coworker'] === coworker);
+  if (p) { p['Status'] = 'Paid'; p['Paid Date'] = new Date().toLocaleDateString('en-GB'); }
+  renderTrips();
+  toast(coworker + ' marked Paid', 'ok');
+}
+
+// ---- BATCH PRINT BY WEEK ----
+// Converts an <input type="week"> value ("2026-W30") to that ISO week's Monday.
+function isoWeekToMonday_(weekStr){
+  const [yearStr, wStr] = weekStr.split('-W');
+  const year = parseInt(yearStr, 10), week = parseInt(wStr, 10);
+  const jan4 = new Date(year, 0, 4);
+  const jan4Day = jan4.getDay() || 7;
+  const week1Monday = new Date(jan4);
+  week1Monday.setDate(jan4.getDate() - jan4Day + 1);
+  const monday = new Date(week1Monday);
+  monday.setDate(week1Monday.getDate() + (week - 1) * 7);
+  return monday;
+}
+function currentIsoWeekValue_(){
+  const d = new Date();
+  const day = d.getDay() || 7;
+  d.setDate(d.getDate() + 4 - day); // Thursday of this week, for correct ISO week/year
+  const yearStart = new Date(d.getFullYear(), 0, 1);
+  const week = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  return d.getFullYear() + '-W' + (week < 10 ? '0' : '') + week;
+}
+
+// Requests the week's print batch from the server (which also flips any still-
+// Submitted rows to Available), renders a signable document per trip into the
+// hidden #weekPrintArea, then opens the browser print dialog. Reprinting the
+// same week later is safe — see printWeek_ in code.gs.
+async function printWeekBatch(){
+  const wkInput = document.getElementById('printWeekInput');
+  const weekVal = wkInput.value || currentIsoWeekValue_();
+  const monday = isoWeekToMonday_(weekVal);
+  const weekOf = monday.toISOString().slice(0,10);
+
+  const res = await postAction({ action: 'printWeek', weekOf });
+  if (!res) return;
+
+  if (!res.trips.length) {
+    toast('No trips found for that week', 'err');
+    return;
+  }
+
+  document.getElementById('weekPrintArea').innerHTML = `
+    <div class="print-week-hdr">🧭 D&A Hub — Trip Payment Sheet — Week of ${res.weekStart} to ${res.weekEnd}</div>
+    ${res.trips.map(g => `
+      <div class="print-trip-block">
+        <div class="print-trip-hdr">
+          <b>${g.trip['Trip ID'] || ''}</b> — ${g.trip['Requester'] || ''} — ${g.trip['Destination'] || ''}
+          (${g.trip['Start'] || ''} → ${g.trip['End'] || ''})
+        </div>
+        <table class="print-trip-tbl">
+          <thead><tr><th>Coworker</th><th>#Days</th><th>Expenses</th><th>Status</th><th>Signature</th></tr></thead>
+          <tbody>
+            ${g.participants.map(p => `<tr>
+              <td>${p['Coworker']}</td><td>${p['#Days']}</td><td>${p['Expenses']}</td><td>${p['Status']}</td>
+              <td class="print-sig-line"></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`).join('')}
+  `;
+
+  document.body.classList.add('printing-week');
+  window.print();
+  fetchTrips(); // refresh local state — some rows may have just flipped to Available
+}
+window.addEventListener('afterprint', () => document.body.classList.remove('printing-week'));
 
 // ---- SCHEDULE CALENDAR VIEW ----
 let schedCalDate = new Date(); // current displayed month
@@ -2041,22 +2196,25 @@ function openTripModal(tripId){
   editingTripId = tripId || null;
   editingDraftIndex = null;
   renderTripCoworkerCheckboxes();
+  const travelersOpen   = document.getElementById('trip-section-travelers');
+  const travelersLocked = document.getElementById('trip-section-travelers-locked');
   if (tripId) {
     const t = trips.find(x=>x['Trip ID']===tripId);
     if(!t){ toast('Trip not found','err'); return; }
     document.getElementById('tripModalTitle').textContent = '✈️ Edit trip';
     document.getElementById('tripSaveBtn').textContent = 'Save changes';
-    const cw = (t['Coworkers']||'').split(',').map(s=>s.trim()).filter(Boolean);
-    document.querySelectorAll('#trip-coworkers-list input').forEach(c=>c.checked = cw.includes(c.value));
-    updateCoworkerCount();
-    ssSetById('trip-destination-wrap', t['Destination City']||'');
-    document.getElementById('trip-departure').value = toISODate(t['Departure Date']);
-    document.getElementById('trip-return').value = toISODate(t['Return Date']);
+    travelersOpen.style.display = 'none';
+    travelersLocked.style.display = '';
+    ssSetById('trip-destination-wrap', t['Destination']||'');
+    document.getElementById('trip-departure').value = toISODate(t['Start']);
+    document.getElementById('trip-return').value = toISODate(t['End']);
     document.getElementById('trip-hotel').checked = t['Needs Hotel']==='Yes';
     document.getElementById('trip-notes').value = t['Notes']||'';
   } else {
     document.getElementById('tripModalTitle').textContent = '✈️ New trip request';
     document.getElementById('tripSaveBtn').textContent = 'Add to Batch';
+    travelersOpen.style.display = '';
+    travelersLocked.style.display = 'none';
     document.querySelectorAll('#trip-coworkers-list input').forEach(c=>c.checked=false);
     updateCoworkerCount();
     ssSetById('trip-destination-wrap', '');
@@ -2096,10 +2254,9 @@ function saveTripModal(){
 }
 async function saveTripEdit(tripId, tripObj){
   const fields = {
-    'Coworkers': tripObj.coworkers.join(', '),
-    'Destination City': tripObj.destination,
-    'Departure Date': tripObj.departureDate,
-    'Return Date': tripObj.returnDate,
+    'Destination': tripObj.destination,
+    'Start': tripObj.departureDate,
+    'End': tripObj.returnDate,
     'Needs Hotel': tripObj.needsHotel ? 'Yes':'No',
     'Notes': tripObj.notes
   };
@@ -2251,6 +2408,9 @@ const POST_ACTION_LABELS = {
   addTrips: 'Submitting trip(s)…',
   updateTrip: 'Saving changes…',
   cancelTrip: 'Cancelling trip…',
+  cancelParticipant: 'Cancelling…',
+  markPaid: 'Marking paid…',
+  printWeek: 'Preparing print sheet…',
   markMaintenanceDone: 'Updating…',
   deleteMaintenanceRow: 'Deleting…',
   updateMaintenanceCell: 'Saving note…',

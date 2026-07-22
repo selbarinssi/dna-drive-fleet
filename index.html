@@ -1789,11 +1789,17 @@ function currentIsoWeekValue_(){
 // Submitted rows to Available), renders a signable document per trip into the
 // hidden #weekPrintArea, then opens the browser print dialog. Reprinting the
 // same week later is safe — see printWeek_ in code.gs.
+// Formats a Date as YYYY-MM-DD using LOCAL calendar components — never use
+// toISOString() for this, it converts through UTC first and can shift the
+// date by a day in either direction depending on timezone (this was the bug).
+function toLocalISO_(d){
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
 async function printWeekBatch(){
   const wkInput = document.getElementById('printWeekInput');
   const weekVal = wkInput.value || currentIsoWeekValue_();
   const monday = isoWeekToMonday_(weekVal);
-  const weekOf = monday.toISOString().slice(0,10);
+  const weekOf = toLocalISO_(monday);
 
   const res = await postAction({ action: 'printWeek', weekOf });
   if (!res) return;

@@ -344,6 +344,7 @@ select.form-input{cursor:pointer}
       <span class="sync-lbl" id="syncLbl">Connecting…</span>
       <button class="sync-btn" onclick="fetchData(true)">↻ Refresh</button>
       <button class="sync-btn" id="usersBtn" onclick="openUsersPanel()" title="Manage users" style="padding:4px 10px;display:none">👥 Users</button>
+      <button class="sync-btn" id="variancesBtn" onclick="openVariancesPanel()" title="Cash variances" style="padding:4px 10px;display:none">💰 Variances</button>
       <button class="sync-btn" onclick="lockSession()" title="Lock session" style="padding:4px 10px">🔒</button>
       <button class="user-badge" id="userBadge" title="Logged in — use the lock button to switch accounts">👤 <span id="userName">…</span></button>
     </div>
@@ -894,6 +895,28 @@ select.form-input{cursor:pointer}
   </div>
 </div>
 
+<div class="overlay" id="variancesOverlay">
+  <div class="modal" style="width:560px">
+    <div class="modal-hdr">
+      <div>
+        <div class="modal-title">💰 Cash Variances</div>
+        <div class="modal-sub">Gaps left over when a trip is edited after money already went out</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('variancesOverlay')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="filters" id="variancesFilters" style="margin-bottom:10px">
+        <button class="fbtn active" onclick="filterVariances('open',this)">Open</button>
+        <button class="fbtn" onclick="filterVariances('all',this)">All</button>
+      </div>
+      <div id="variancesList" class="cw-list" style="max-height:360px"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-outline" onclick="closeModal('variancesOverlay')">Close</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="usersOverlay">
   <div class="modal" style="width:480px">
     <div class="modal-hdr">
@@ -1012,6 +1035,57 @@ function lockSession(){
   toast('Session locked', 'ok');
 }
 function isAdmin(){ return sessionStorage.getItem('dash_role') === 'Admin'; }
+
+// ---- CASH VARIANCES (Admin only) ----
+let variancesData = [];
+let variancesFilter = 'open';
+function openVariancesPanel(){
+  document.getElementById('variancesList').innerHTML = '<div class="form-hint">Loading…</div>';
+  openModal('variancesOverlay');
+  fetchVariances();
+}
+async function fetchVariances(){
+  const res = await postAction({ action: 'getVariances' });
+  if(!res) return;
+  variancesData = res.variances || [];
+  renderVariancesList();
+}
+function filterVariances(f, el){
+  variancesFilter = f;
+  document.querySelectorAll('#variancesFilters .fbtn').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  renderVariancesList();
+}
+function renderVariancesList(){
+  const rows = variancesData.filter(v => variancesFilter === 'all' || v['Resolved'] !== 'Yes');
+  const box = document.getElementById('variancesList');
+  if(!rows.length){ box.innerHTML = '<div class="form-hint">No variances found</div>'; return; }
+  box.innerHTML = rows.map(v => {
+    const amt = Number(v['Amount']);
+    const sign = amt > 0 ? '+' : '';
+    const color = amt > 0 ? 'var(--ok)' : 'var(--danger)';
+    const resolved = v['Resolved'] === 'Yes';
+    return `<div class="cw-row" style="justify-content:space-between;align-items:center">
+      <span>
+        <b>${v['Coworker']}</b> <span style="color:var(--t3)">— from ${v['Origin Trip ID']} (${v['Created Date']})</span>
+        ${resolved ? `<span class="badge b-gray" style="margin-left:6px">Resolved${v['Resolved In Trip ID'] ? ' via '+v['Resolved In Trip ID'] : ''}</span>` : ''}
+      </span>
+      <span style="white-space:nowrap">
+        <b style="color:${color}">${sign}${amt}</b>
+        ${!resolved ? `<button class="act-btn diag" style="margin-left:8px" onclick="resolveVarianceRow(${v._row})">Resolve</button>` : ''}
+      </span>
+    </div>`;
+  }).join('');
+}
+async function resolveVarianceRow(row){
+  const resolvedInTripId = prompt('Resolved via which Trip ID? (leave blank if written off / not tied to a trip)') || '';
+  const res = await postAction({ action: 'resolveVariance', row, resolvedInTripId });
+  if(!res) return;
+  const v = variancesData.find(x => x._row === row);
+  if (v) { v['Resolved'] = 'Yes'; v['Resolved In Trip ID'] = resolvedInTripId; }
+  renderVariancesList();
+  toast('Variance resolved', 'ok');
+}
 
 // ---- MANAGE USERS (Admin only) ----
 function openUsersPanel(){
@@ -1162,6 +1236,7 @@ function getUser(){ return sessionStorage.getItem('dash_displayname') || session
 function initUser(){
   document.getElementById('userName').textContent = getUser();
   document.getElementById('usersBtn').style.display = isAdmin() ? '' : 'none';
+  document.getElementById('variancesBtn').style.display = isAdmin() ? '' : 'none';
   fetchTripConfig();
 }
 
@@ -2424,7 +2499,9 @@ const POST_ACTION_LABELS = {
   addVehicle: 'Adding vehicle…',
   updateVehicle: 'Saving vehicle…',
   addUser: 'Creating user…',
-  getUsers: 'Loading users…'
+  getUsers: 'Loading users…',
+  getVariances: 'Loading variances…',
+  resolveVariance: 'Resolving…'
 };
 
 async function postAction(payload) {

@@ -1893,11 +1893,12 @@ async function printWeekBatch(){
           (${g.trip['Start'] || ''} → ${g.trip['End'] || ''})
         </div>
         <table class="print-trip-tbl">
-          <colgroup><col style="width:28%"><col style="width:10%"><col style="width:14%"><col style="width:14%"><col style="width:34%"></colgroup>
-          <thead><tr><th>Coworker</th><th>#Days</th><th>Expenses</th><th>Status</th><th>Signature</th></tr></thead>
+          <colgroup><col style="width:26%"><col style="width:10%"><col style="width:14%"><col style="width:16%"><col style="width:34%"></colgroup>
+          <thead><tr><th>Coworker</th><th>#Days</th><th>Expenses</th><th>Date</th><th>Signature</th></tr></thead>
           <tbody>
             ${g.participants.map(p => `<tr>
-              <td>${p['Coworker']}</td><td>${p['#Days']}</td><td>${p['Expenses']}</td><td>${p['Status']}</td>
+              <td>${p['Coworker']}</td><td>${p['#Days']}</td><td>${p['Expenses']}</td>
+              <td class="print-sig-line"></td>
               <td class="print-sig-line"></td>
             </tr>`).join('')}
           </tbody>

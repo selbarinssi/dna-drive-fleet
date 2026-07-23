@@ -12,7 +12,10 @@ var TRIPS_SS_ID  = '1nixoCLzylc5a5vLSNFoaf3xEbUojjBkY8TIQUyjgRX8';
 var SHEET_USERS  = 'Users';
 var SHEET_SETUP  = 'Setup';
 var SHEET_TRIPS  = 'Trips';
+var SHEET_TRIP_PARTICIPANTS = 'TripParticipants';
 var SHEET_TRIP_NIGHTS = 'TripAccommodations';
+var SHEET_CASH_VARIANCES = 'CashVariances';
+var DAILY_EXPENSE_RATE = 80;
 var SHEET_TRIP_LOG    = 'DashboardLog'; // separate tab, inside TRIPS_SS_ID
 
 // ================================================================
@@ -34,7 +37,8 @@ function doGet(e) {
     'getVehicles', 'getAll', 'getLogs', 'getMaintenanceLog', 'getDailyChecks',
     'updateVehicle', 'logOilChange', 'logDiagnostic', 'logMaintenance', 'addVehicle',
     'markMaintenanceDone', 'deleteMaintenanceRow', 'updateMaintenanceCell', 'updateMaintenanceRow',
-    'addUser', 'getUsers', 'getTripConfig', 'getTrips', 'addTrips', 'updateTrip', 'cancelTrip'
+    'addUser', 'getUsers', 'getTripConfig', 'getTrips', 'addTrips', 'updateTrip', 'cancelTrip',
+    'cancelParticipant', 'markPaid', 'printWeek', 'getVariances', 'resolveVariance'
   ];
 
   if (dashboardActions.indexOf(action) !== -1) {
@@ -77,6 +81,7 @@ function doGet(e) {
       if (action === 'addTrips')          return addTrips_(payload, user);
       if (action === 'updateTrip')        return updateTrip_(payload, user);
       if (action === 'cancelTrip')        return cancelTrip_(payload, user);
+      if (action === 'cancelParticipant') return cancelParticipant_(payload, user);
       if (_result) {
         Logger.log('[TIMING] ' + action + ' | sheet read: ' + (Date.now() - _tReadStart) + 'ms | total: ' + (Date.now() - _t0) + 'ms');
         return _result;
@@ -89,6 +94,10 @@ function doGet(e) {
           error: 'Unauthorized: Admin role required.'
         })));
       }
+      if (action === 'markPaid')             return markParticipantPaid_(payload, user);
+      if (action === 'printWeek')            return printWeek_(payload, user);
+      if (action === 'getVariances')         return getVariances_(user);
+      if (action === 'resolveVariance')      return resolveVariance_(payload, user);
       if (action === 'addUser')              return addUser_(payload);
       if (action === 'getUsers')             return getUsers_();
       if (action === 'updateVehicle')        return updateVehicle_(payload);
@@ -623,7 +632,18 @@ function getOrCreateTripsSheet_() {
   var sh = ss.getSheetByName(SHEET_TRIPS);
   if (!sh) {
     sh = ss.insertSheet(SHEET_TRIPS);
-    sh.appendRow(['Trip ID', 'Timestamp', 'Requester', 'Coworkers', 'Destination City', 'Departure Date', 'Return Date', 'Needs Hotel', 'Notes', 'Status']);
+    sh.appendRow(['Trip ID', 'Timestamp', 'Requester', 'Destination', 'Start', 'End', '#Days', 'Needs Hotel', 'Notes']);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function getOrCreateTripParticipantsSheet_() {
+  var ss = getTripSS_();
+  var sh = ss.getSheetByName(SHEET_TRIP_PARTICIPANTS);
+  if (!sh) {
+    sh = ss.insertSheet(SHEET_TRIP_PARTICIPANTS);
+    sh.appendRow(['Trip ID', 'Coworker', 'Destination', 'Start', 'End', '#Days', 'Expenses', 'Status', 'Paid Date']);
     sh.setFrozenRows(1);
   }
   return sh;
@@ -640,79 +660,128 @@ function getOrCreateTripNightsSheet_() {
   return sh;
 }
 
-// Bulk read — both sheets fetched into memory in one call each, so overlap/
-// double-booking checks (Phase 2 of the trips feature) can just be an in-memory
-// filter later, not a fresh sheet read.
+// One row per unresolved (or resolved) cash gap — created whenever a trip is
+// edited after money already left the coffer for a coworker on it (their
+// Amount Received no longer matches the recalculated Expenses). Resolved
+// manually once the gap is settled against a real trip payment.
+function getOrCreateCashVariancesSheet_() {
+  var ss = getTripSS_();
+  var sh = ss.getSheetByName(SHEET_CASH_VARIANCES);
+  if (!sh) {
+    sh = ss.insertSheet(SHEET_CASH_VARIANCES);
+    sh.appendRow(['Coworker', 'Origin Trip ID', 'Amount', 'Created Date', 'Resolved', 'Resolved In Trip ID']);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function logCashVariance_(coworker, tripId, amount) {
+  getOrCreateCashVariancesSheet_().appendRow([coworker, tripId, amount, new Date(), 'No', '']);
+}
+
+// Generic helper — reads a sheet's data range into an array of plain objects
+// keyed by its literal row-1 header text (headers are trusted as-is; see the
+// header-mismatch bug in project memory — row 1 must match exactly).
+function sheetToObjects_(sh) {
+  if (!sh) return [];
+  var data = sh.getDataRange().getValues();
+  if (data.length < 2) return [];
+  var headers = data[0];
+  return data.slice(1).map(function(row, i) {
+    var obj = { _row: i + 2 };
+    headers.forEach(function(h, j) {
+      var v = row[j];
+      if (v instanceof Date) v = Utilities.formatDate(v, Session.getScriptTimeZone(), 'dd/MM/yyyy');
+      obj[h] = v;
+    });
+    return obj;
+  });
+}
+
+// Bulk read — all three sheets fetched into memory in one call each.
 function getTrips_() {
   var ss = getTripSS_();
-
-  var tSh = ss.getSheetByName(SHEET_TRIPS);
-  var trips = [];
-  if (tSh) {
-    var tData = tSh.getDataRange().getValues();
-    if (tData.length >= 2) {
-      var tHeaders = tData[0];
-      trips = tData.slice(1).map(function(row, i) {
-        var obj = { _row: i + 2 };
-        tHeaders.forEach(function(h, j) {
-          var v = row[j];
-          if (v instanceof Date) v = Utilities.formatDate(v, Session.getScriptTimeZone(), 'dd/MM/yyyy');
-          obj[h] = v;
-        });
-        return obj;
-      });
-    }
-  }
-
-  var nSh = ss.getSheetByName(SHEET_TRIP_NIGHTS);
-  var nights = [];
-  if (nSh) {
-    var nData = nSh.getDataRange().getValues();
-    if (nData.length >= 2) {
-      var nHeaders = nData[0];
-      nights = nData.slice(1).map(function(row, i) {
-        var obj = { _row: i + 2 };
-        nHeaders.forEach(function(h, j) {
-          var v = row[j];
-          if (v instanceof Date) v = Utilities.formatDate(v, Session.getScriptTimeZone(), 'dd/MM/yyyy');
-          obj[h] = v;
-        });
-        return obj;
-      });
-    }
-  }
+  var trips        = sheetToObjects_(ss.getSheetByName(SHEET_TRIPS));
+  var participants = sheetToObjects_(ss.getSheetByName(SHEET_TRIP_PARTICIPANTS));
+  var nights       = sheetToObjects_(ss.getSheetByName(SHEET_TRIP_NIGHTS));
 
   return cors_(ContentService.createTextOutput(JSON.stringify({
-    ok: true, trips: trips, nights: nights
+    ok: true, trips: trips, participants: participants, nights: nights
   })));
 }
 
-// Builds a short, human-readable Trip ID like "CMN-20260720" — first 3 letters
-// of the destination + the departure date. Suffixed with -2, -3... if the same
-// destination+date combo is already used (e.g. 10 travelers, same trip, same day).
-function generateTripId_(destination, departureDate, existingIds) {
+// Parses "YYYY-MM-DD" (or an existing Date) into a Date built from explicit
+// local calendar components. Avoids the classic new Date("YYYY-MM-DD") trap —
+// date-only ISO strings parse as UTC midnight, and once local-time methods
+// (setHours, getDay, etc.) touch that value, it can silently land on the
+// wrong calendar day depending on timezone. This sidesteps the ambiguity
+// entirely by never round-tripping through UTC.
+function parseDateOnly_(value) {
+  if (!value) return null;
+  if (value instanceof Date) return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  var m = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+  return new Date(value);
+}
+
+// Monday-based week bounds for a given date (day-start Monday to day-end Sunday).
+function getWeekBounds_(date) {
+  var d = parseDateOnly_(date) || new Date();
+  d.setHours(0, 0, 0, 0);
+  var day = d.getDay(); // 0 = Sunday ... 6 = Saturday
+  var diffToMonday = (day === 0) ? -6 : 1 - day;
+  var monday = new Date(d);
+  monday.setDate(d.getDate() + diffToMonday);
+  var sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  sunday.setHours(23, 59, 59, 999);
+  return { monday: monday, sunday: sunday };
+}
+
+// Builds a Trip ID like "01-AGA-21072026": a 2-digit counter that resets every
+// Monday (based on the trip's Start date), shared across all destinations that
+// week (for physical filing order), + first 3 letters of the destination +
+// Start date as DDMMYYYY. existingTripIds is a map of already-used IDs
+// (pre-loaded once per addTrips_ batch, updated as new IDs are minted within it).
+function generateTripId_(destination, startDate, existingTripIds) {
   var code = String(destination || 'TRP').toUpperCase().replace(/[^A-Z]/g, '').substring(0, 3);
   if (!code) code = 'TRP';
-  var d = departureDate ? new Date(departureDate) : new Date();
-  var dateStr = Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyyMMdd');
-  var base = code + '-' + dateStr;
-  var id = base;
-  var n = 1;
-  while (existingIds[id]) {
-    n++;
-    id = base + '-' + n;
-  }
-  existingIds[id] = true;
+  var d = parseDateOnly_(startDate) || new Date();
+  var dateStr = Utilities.formatDate(d, Session.getScriptTimeZone(), 'ddMMyyyy');
+  var bounds = getWeekBounds_(d);
+
+  var maxCounter = 0;
+  Object.keys(existingTripIds).forEach(function(id) {
+    var parts = id.split('-');
+    if (parts.length < 3) return;
+    var idDateStr = parts[parts.length - 1];
+    var idDate;
+    try { idDate = Utilities.parseDate(idDateStr, Session.getScriptTimeZone(), 'ddMMyyyy'); }
+    catch (e) { return; }
+    if (idDate >= bounds.monday && idDate <= bounds.sunday) {
+      var n = parseInt(parts[0], 10);
+      if (!isNaN(n) && n > maxCounter) maxCounter = n;
+    }
+  });
+
+  var counter = maxCounter + 1;
+  var counterStr = (counter < 10 ? '0' : '') + counter;
+  var id = counterStr + '-' + code + '-' + dateStr;
+  existingTripIds[id] = true;
   return id;
 }
 
-// Batched — writes all trip rows + all night rows in single setValues() calls,
-// not one round-trip per trip. Requester is always the verified logged-in user.
+// Batched — writes one Trips row + N TripParticipants rows (one per coworker)
+// per trip, plus night rows, in single setValues() calls. Requester is always
+// the verified logged-in user. #Days = nights (End − Start). Expenses = #Days
+// × DAILY_EXPENSE_RATE, duplicated onto every participant row on purpose (see
+// project decision: TripParticipants is self-sufficient for payment follow-up).
 function addTrips_(payload, user) {
   if (!payload.trips || !payload.trips.length) {
     return cors_(ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'No trips provided.' })));
   }
   var tSh = getOrCreateTripsSheet_();
+  var pSh = getOrCreateTripParticipantsSheet_();
   var nSh = getOrCreateTripNightsSheet_();
   var now = new Date();
 
@@ -722,22 +791,29 @@ function addTrips_(payload, user) {
     tSh.getRange(2, 1, lastTripRow - 1, 1).getValues().forEach(function(r){ existingTripIds[r[0]] = true; });
   }
 
-  var tripRows  = [];
-  var nightRows = [];
-  payload.trips.forEach(function(trip, i) {
+  var tripRows        = [];
+  var participantRows = [];
+  var nightRows       = [];
+
+  payload.trips.forEach(function(trip) {
     var tripId = generateTripId_(trip.destination, trip.departureDate, existingTripIds);
+    var start  = parseDateOnly_(trip.departureDate);
+    var end    = parseDateOnly_(trip.returnDate);
+    var days   = (start && end) ? Math.round((end - start) / 86400000) : 0;
+    var expenses = days * DAILY_EXPENSE_RATE;
+
     tripRows.push([
-      tripId,
-      now,
-      user.username,
-      (trip.coworkers || []).join(', '),
-      trip.destination || '',
-      trip.departureDate ? new Date(trip.departureDate) : '',
-      trip.returnDate   ? new Date(trip.returnDate)   : '',
-      trip.needsHotel ? 'Yes' : 'No',
-      trip.notes || '',
-      'Active'
+      tripId, now, user.username, trip.destination || '',
+      start || '', end || '', days, trip.needsHotel ? 'Yes' : 'No', trip.notes || ''
     ]);
+
+    (trip.coworkers || []).forEach(function(coworker) {
+      participantRows.push([
+        tripId, coworker, trip.destination || '', start || '', end || '',
+        days, expenses, 'Submitted', ''
+      ]);
+    });
+
     if (trip.needsHotel && trip.nights && trip.nights.length) {
       trip.nights.forEach(function(night) {
         nightRows.push([tripId, night.date ? new Date(night.date) : '', night.city || '']);
@@ -748,6 +824,11 @@ function addTrips_(payload, user) {
   var tStart = tSh.getLastRow() + 1;
   tSh.getRange(tStart, 1, tripRows.length, tripRows[0].length).setValues(tripRows);
 
+  if (participantRows.length) {
+    var pStart = pSh.getLastRow() + 1;
+    pSh.getRange(pStart, 1, participantRows.length, participantRows[0].length).setValues(participantRows);
+  }
+
   if (nightRows.length) {
     var nStart = nSh.getLastRow() + 1;
     nSh.getRange(nStart, 1, nightRows.length, nightRows[0].length).setValues(nightRows);
@@ -756,15 +837,18 @@ function addTrips_(payload, user) {
   appendLog_(getTripSS_(), {
     timestamp: now,
     vehicleId: '',
-    action:    tripRows.length + ' trip(s) booked to ' + tripRows.map(function(r){ return r[4]; }).join(', '),
+    action:    tripRows.length + ' trip(s) booked to ' + tripRows.map(function(r){ return r[3]; }).join(', '),
     user:      user.username,
     note:      ''
   });
 
-  return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true, added: tripRows.length })));
+  return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true, added: tripRows.length, participants: participantRows.length })));
 }
 
-// Edit an existing trip. Admin can edit any trip; a User can only edit their own.
+// Edit an existing trip's shared (trip-level) fields. Admin can edit any
+// trip; a User can only edit their own. Cascades Destination/Start/End/#Days
+// down to every TripParticipants row on this Trip ID — see
+// cascadeTripEditToParticipants_ for how already-disbursed money is protected.
 function updateTrip_(payload, user) {
   var sh      = getOrCreateTripsSheet_();
   var data    = sh.getDataRange().getValues();
@@ -782,15 +866,32 @@ function updateTrip_(payload, user) {
     return cors_(ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'Unauthorized: not your trip.' })));
   }
 
-  var editable = ['Coworkers', 'Destination City', 'Departure Date', 'Return Date', 'Needs Hotel', 'Notes'];
+  var editable = ['Destination', 'Start', 'End', 'Needs Hotel', 'Notes'];
   var changed  = [];
+  var newVals  = {};
   Object.keys(payload.fields || {}).forEach(function(fieldName) {
-    if (editable.indexOf(fieldName) === -1) return; // Trip ID / Requester / Status not editable here
+    if (editable.indexOf(fieldName) === -1) return;
     var colIdx = headers.indexOf(fieldName);
     if (colIdx === -1) return;
     sh.getRange(rowIdx, colIdx + 1).setValue(payload.fields[fieldName]);
     changed.push(fieldName);
+    newVals[fieldName] = payload.fields[fieldName];
   });
+
+  var startCol = headers.indexOf('Start'), endCol = headers.indexOf('End'), daysCol = headers.indexOf('#Days');
+  var startVal = newVals.hasOwnProperty('Start') ? parseDateOnly_(newVals['Start']) : data[rowIdx - 1][startCol];
+  var endVal   = newVals.hasOwnProperty('End')   ? parseDateOnly_(newVals['End'])   : data[rowIdx - 1][endCol];
+  var newDays  = (startVal && endVal) ? Math.round((new Date(endVal) - new Date(startVal)) / 86400000) : 0;
+  if (daysCol > -1) sh.getRange(rowIdx, daysCol + 1).setValue(newDays);
+
+  if (newVals.hasOwnProperty('Destination') || newVals.hasOwnProperty('Start') || newVals.hasOwnProperty('End')) {
+    cascadeTripEditToParticipants_(payload.tripId, {
+      destination: newVals['Destination'],
+      start: newVals.hasOwnProperty('Start') ? startVal : null,
+      end:   newVals.hasOwnProperty('End')   ? endVal   : null,
+      days:  newDays
+    }, user);
+  }
 
   appendLog_(getTripSS_(), {
     timestamp: new Date(),
@@ -800,6 +901,263 @@ function updateTrip_(payload, user) {
     note:      ''
   });
   return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true, updated: changed })));
+}
+
+// Pushes Destination/Start/End/#Days/Expenses down to every participant row
+// on this Trip ID. If a participant's money already left the coffer (their
+// Amount Received is set — i.e. Available or Paid), the gap between what
+// they already received and the newly recalculated Expenses is logged to
+// CashVariances rather than silently overwritten.
+function cascadeTripEditToParticipants_(tripId, changes, user) {
+  var pSh = getOrCreateTripParticipantsSheet_();
+  var pData = pSh.getDataRange().getValues();
+  if (pData.length < 2) return;
+  var headers     = pData[0];
+  var idCol       = headers.indexOf('Trip ID');
+  var destCol     = headers.indexOf('Destination');
+  var startCol    = headers.indexOf('Start');
+  var endCol      = headers.indexOf('End');
+  var daysCol     = headers.indexOf('#Days');
+  var expCol      = headers.indexOf('Expenses');
+  var receivedCol = headers.indexOf('Amount Received');
+  var cwCol       = headers.indexOf('Coworker');
+  var statusCol   = headers.indexOf('Status');
+
+  var newExpenses = changes.days * DAILY_EXPENSE_RATE;
+
+  for (var i = 1; i < pData.length; i++) {
+    if (String(pData[i][idCol]) !== String(tripId)) continue;
+    if (changes.destination) pSh.getRange(i + 1, destCol + 1).setValue(changes.destination);
+    if (changes.start)       pSh.getRange(i + 1, startCol + 1).setValue(changes.start);
+    if (changes.end)         pSh.getRange(i + 1, endCol + 1).setValue(changes.end);
+    pSh.getRange(i + 1, daysCol + 1).setValue(changes.days);
+
+    var oldExpenses = pData[i][expCol];
+    if (oldExpenses !== newExpenses) {
+      pSh.getRange(i + 1, expCol + 1).setValue(newExpenses);
+
+      var amountReceived = receivedCol > -1 ? pData[i][receivedCol] : '';
+      var status = pData[i][statusCol];
+      if (amountReceived !== '' && amountReceived != null && (status === 'Available' || status === 'Paid')) {
+        var variance = Number(amountReceived) - newExpenses;
+        if (variance !== 0) logCashVariance_(pData[i][cwCol], tripId, variance);
+      }
+    }
+  }
+}
+
+// Admin-only read of the full variance ledger.
+function getVariances_(user) {
+  var rows = sheetToObjects_(getOrCreateCashVariancesSheet_());
+  return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true, variances: rows })));
+}
+
+// Manually marks a variance settled — Admin decides how it was actually
+// resolved (against a specific future trip, or written off) since there's no
+// automatic netting yet.
+function resolveVariance_(payload, user) {
+  var sh = getOrCreateCashVariancesSheet_();
+  var headers = sh.getDataRange().getValues()[0];
+  var resolvedCol = headers.indexOf('Resolved');
+  var resolvedInCol = headers.indexOf('Resolved In Trip ID');
+  var rowIdx = payload.row;
+  if (!rowIdx || rowIdx < 2 || rowIdx > sh.getLastRow()) {
+    return cors_(ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'Invalid row.' })));
+  }
+  sh.getRange(rowIdx, resolvedCol + 1).setValue('Yes');
+  sh.getRange(rowIdx, resolvedInCol + 1).setValue(payload.resolvedInTripId || '');
+  appendLog_(getTripSS_(), {
+    timestamp: new Date(), vehicleId: '',
+    action: 'Cash variance resolved (row ' + rowIdx + ')' + (payload.resolvedInTripId ? ' via trip ' + payload.resolvedInTripId : ''),
+    user: user.username, note: ''
+  });
+  return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true })));
+}
+
+// Cancels every participant on a Trip ID that isn't already in a terminal
+// state (Paid/Cancelled left alone) — whole-group cancel. For dropping a
+// single coworker without cancelling the rest of the group, see cancelParticipant_.
+function cancelTrip_(payload, user) {
+  var tSh   = getOrCreateTripsSheet_();
+  var tData = tSh.getDataRange().getValues();
+  var tHeaders = tData[0];
+  var tReqCol  = tHeaders.indexOf('Requester');
+  var tIdCol   = tHeaders.indexOf('Trip ID');
+  var requester = null;
+  for (var t = 1; t < tData.length; t++) {
+    if (String(tData[t][tIdCol]) === String(payload.tripId)) { requester = tData[t][tReqCol]; break; }
+  }
+  if (requester === null) {
+    return cors_(ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'Trip ID not found: ' + payload.tripId })));
+  }
+  if (user.role !== 'Admin' && String(requester) !== String(user.username)) {
+    return cors_(ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'Unauthorized: not your trip.' })));
+  }
+
+  var pSh   = getOrCreateTripParticipantsSheet_();
+  var pData = pSh.getDataRange().getValues();
+  var pHeaders  = pData[0];
+  var idCol     = pHeaders.indexOf('Trip ID');
+  var statusCol = pHeaders.indexOf('Status');
+
+  var cancelledCount = 0;
+  for (var i = 1; i < pData.length; i++) {
+    if (String(pData[i][idCol]) !== String(payload.tripId)) continue;
+    var current = pData[i][statusCol];
+    if (current === 'Paid' || current === 'Cancelled') continue;
+    pSh.getRange(i + 1, statusCol + 1).setValue('Cancelled');
+    cancelledCount++;
+  }
+
+  appendLog_(getTripSS_(), {
+    timestamp: new Date(),
+    vehicleId: '',
+    action:    'Trip ' + payload.tripId + ' cancelled (' + cancelledCount + ' participant(s))',
+    user:      user.username,
+    note:      ''
+  });
+  return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true, cancelled: cancelledCount })));
+}
+
+// Cancels a single coworker's line without touching the rest of the group.
+function cancelParticipant_(payload, user) {
+  var pSh   = getOrCreateTripParticipantsSheet_();
+  var pData = pSh.getDataRange().getValues();
+  var pHeaders  = pData[0];
+  var idCol     = pHeaders.indexOf('Trip ID');
+  var cwCol     = pHeaders.indexOf('Coworker');
+  var statusCol = pHeaders.indexOf('Status');
+  var rowIdx = -1;
+  for (var i = 1; i < pData.length; i++) {
+    if (String(pData[i][idCol]) === String(payload.tripId) && String(pData[i][cwCol]) === String(payload.coworker)) {
+      rowIdx = i + 1; break;
+    }
+  }
+  if (rowIdx === -1) {
+    return cors_(ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'Participant not found.' })));
+  }
+  var current = pData[rowIdx - 1][statusCol];
+  if (current === 'Paid' || current === 'Cancelled') {
+    return cors_(ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'Already ' + current + ' — cannot cancel.' })));
+  }
+  pSh.getRange(rowIdx, statusCol + 1).setValue('Cancelled');
+  appendLog_(getTripSS_(), {
+    timestamp: new Date(), vehicleId: '',
+    action: 'Trip ' + payload.tripId + ' — ' + payload.coworker + ' cancelled',
+    user: user.username, note: ''
+  });
+  return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true })));
+}
+
+// Available -> Paid only. Stamps Paid Date. Rejects any other current status
+// (enforces the state machine: you can't mark Paid straight from Submitted).
+function markParticipantPaid_(payload, user) {
+  var pSh   = getOrCreateTripParticipantsSheet_();
+  var pData = pSh.getDataRange().getValues();
+  var pHeaders  = pData[0];
+  var idCol     = pHeaders.indexOf('Trip ID');
+  var cwCol     = pHeaders.indexOf('Coworker');
+  var statusCol = pHeaders.indexOf('Status');
+  var paidCol   = pHeaders.indexOf('Paid Date');
+  var rowIdx = -1;
+  for (var i = 1; i < pData.length; i++) {
+    if (String(pData[i][idCol]) === String(payload.tripId) && String(pData[i][cwCol]) === String(payload.coworker)) {
+      rowIdx = i + 1; break;
+    }
+  }
+  if (rowIdx === -1) {
+    return cors_(ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'Participant not found.' })));
+  }
+  var current = pData[rowIdx - 1][statusCol];
+  if (current !== 'Available') {
+    return cors_(ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'Can only mark Paid from Available (currently ' + current + ').' })));
+  }
+  pSh.getRange(rowIdx, statusCol + 1).setValue('Paid');
+  pSh.getRange(rowIdx, paidCol + 1).setValue(new Date());
+  appendLog_(getTripSS_(), {
+    timestamp: new Date(), vehicleId: '',
+    action: 'Trip ' + payload.tripId + ' — ' + payload.coworker + ' marked Paid',
+    user: user.username, note: ''
+  });
+  return cors_(ContentService.createTextOutput(JSON.stringify({ ok: true })));
+}
+
+// Batch print: pulls every participant whose Start falls in the given week
+// (Mon–Sun, computed from payload.weekOf, any date inside the target week),
+// skipping Cancelled rows, grouped by Trip ID with that trip's header info
+// attached. Side effect: any row still 'Submitted' flips to 'Available' —
+// reprinting the same week later is safe, since only 'Submitted' rows are
+// ever touched (idempotent by construction — no undo needed).
+function printWeek_(payload, user) {
+  var anyDateInWeek = payload.weekOf ? parseDateOnly_(payload.weekOf) : new Date();
+  var bounds = getWeekBounds_(anyDateInWeek);
+
+  var tSh = getOrCreateTripsSheet_();
+  var tData = tSh.getDataRange().getValues();
+  var tHeaders = tData[0];
+  var tIdCol = tHeaders.indexOf('Trip ID');
+  var tripsById = {};
+  for (var t = 1; t < tData.length; t++) {
+    var obj = {};
+    tHeaders.forEach(function(h, j) {
+      var v = tData[t][j];
+      if (v instanceof Date) v = Utilities.formatDate(v, Session.getScriptTimeZone(), 'dd/MM/yyyy');
+      obj[h] = v;
+    });
+    tripsById[tData[t][tIdCol]] = obj;
+  }
+
+  var pSh = getOrCreateTripParticipantsSheet_();
+  var pData = pSh.getDataRange().getValues();
+  var pHeaders  = pData[0];
+  var idCol       = pHeaders.indexOf('Trip ID');
+  var startCol    = pHeaders.indexOf('Start');
+  var statusCol   = pHeaders.indexOf('Status');
+  var expCol      = pHeaders.indexOf('Expenses');
+  var receivedCol = pHeaders.indexOf('Amount Received');
+
+  var grouped = {};
+  var flippedCount = 0;
+  for (var i = 1; i < pData.length; i++) {
+    var start = pData[i][startCol];
+    if (!(start instanceof Date) || start < bounds.monday || start > bounds.sunday) continue;
+    if (pData[i][statusCol] === 'Cancelled') continue;
+
+    if (pData[i][statusCol] === 'Submitted') {
+      pSh.getRange(i + 1, statusCol + 1).setValue('Available');
+      pData[i][statusCol] = 'Available';
+      if (receivedCol > -1) {
+        pSh.getRange(i + 1, receivedCol + 1).setValue(pData[i][expCol]);
+        pData[i][receivedCol] = pData[i][expCol];
+      }
+      flippedCount++;
+    }
+
+    var tripId = pData[i][idCol];
+    if (!grouped[tripId]) grouped[tripId] = { trip: tripsById[tripId] || { 'Trip ID': tripId }, participants: [] };
+    var pObj = {};
+    pHeaders.forEach(function(h, j) {
+      var v = pData[i][j];
+      if (v instanceof Date) v = Utilities.formatDate(v, Session.getScriptTimeZone(), 'dd/MM/yyyy');
+      pObj[h] = v;
+    });
+    grouped[tripId].participants.push(pObj);
+  }
+
+  if (flippedCount) {
+    appendLog_(getTripSS_(), {
+      timestamp: new Date(), vehicleId: '',
+      action: 'Week of ' + Utilities.formatDate(bounds.monday, Session.getScriptTimeZone(), 'dd/MM/yyyy') + ' printed — ' + flippedCount + ' participant(s) moved to Available',
+      user: user.username, note: ''
+    });
+  }
+
+  return cors_(ContentService.createTextOutput(JSON.stringify({
+    ok: true,
+    weekStart: Utilities.formatDate(bounds.monday, Session.getScriptTimeZone(), 'dd/MM/yyyy'),
+    weekEnd:   Utilities.formatDate(bounds.sunday,  Session.getScriptTimeZone(), 'dd/MM/yyyy'),
+    trips: Object.keys(grouped).map(function(id){ return grouped[id]; })
+  })));
 }
 
 // Soft delete — sets Status to "Cancelled" rather than removing the row, preserving

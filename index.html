@@ -563,7 +563,7 @@ select.form-input{cursor:pointer}
     <table class="tbl">
       <thead><tr>
         <th>Trip ID</th><th>Coworker</th><th>Destination</th>
-        <th>Start</th><th>End</th><th>#Days</th><th>Expenses</th><th>Status</th><th>Paid Date</th><th>Actions</th>
+        <th>Start</th><th>End</th><th>#Days</th><th>Expenses</th><th>Status</th><th>Paid Date</th><th>Amount Paid</th><th>Actions</th>
       </tr></thead>
       <tbody id="tripsTbody"></tbody>
     </table>
@@ -1843,6 +1843,7 @@ function renderTrips(){
       <td>${p['Expenses']}</td>
       <td><span class="badge ${s.cls}">${s.label}</span></td>
       <td>${p['Paid Date'] || '—'}</td>
+      <td>${p['Amount Paid'] ? (Number(p['Amount Paid']) !== Number(p['Expenses']) ? `${p['Amount Paid']} <span class="form-hint" style="margin:0">(netted)</span>` : p['Amount Paid']) : '—'}</td>
       <td style="white-space:nowrap">${groupActions}${lineActions}</td>
     </tr>`;
   }).join('');
@@ -1870,15 +1871,32 @@ async function cancelParticipantPrompt(tripId, coworker){
   toast('Cancelled', 'ok');
 }
 
-// Available -> Paid only (enforced server-side too). Stamps Paid Date.
+// Available -> Paid. Checks this coworker's open Personal variances first —
+// if they have any, offers to net them into this payout, explaining why in
+// the confirmation so it's never a mystery deduction.
 async function markPaid(tripId, coworker){
-  if (!confirm('Confirm you handed the money to ' + coworker + '? This records today\'s date.')) return;
-  const res = await postAction({ action: 'markPaid', tripId, coworker });
-  if (!res) return;
   const p = participants.find(x => x['Trip ID'] === tripId && x['Coworker'] === coworker);
-  if (p) { p['Status'] = 'Paid'; p['Paid Date'] = new Date().toLocaleDateString('en-GB'); }
+  if (!p) return;
+  const expenses = Number(p['Expenses']);
+  let resolveVarianceRows = [];
+  let amountPaid = expenses;
+
+  const openVariances = variancesData.filter(v => v['Coworker'] === coworker && v['Type'] === 'Personal' && v['Resolved'] !== 'Yes');
+  if (openVariances.length) {
+    const total = openVariances.reduce((s,v)=>s+Number(v['Amount']),0);
+    const detail = openVariances.map(v => `  • ${v['Origin Trip ID']}: ${v['Detail']||''} (${v['Amount']})`).join('\n');
+    const apply = confirm(`${coworker} has an open personal variance of ${total}, from:\n${detail}\n\nApply it to this payout? They'd receive ${expenses - total} instead of ${expenses}.\n\nOK = apply it, Cancel = pay the full ${expenses} and leave the variance open.`);
+    if (apply) { resolveVarianceRows = openVariances.map(v => v._row); amountPaid = expenses - total; }
+  }
+
+  if (!confirm(`Confirm you handed ${amountPaid} to ${coworker}? This records today's date.`)) return;
+
+  const res = await postAction({ action: 'markPaid', tripId, coworker, resolveVarianceRows });
+  if (!res) return;
+  p['Status'] = 'Paid'; p['Paid Date'] = new Date().toLocaleDateString('en-GB'); p['Amount Paid'] = amountPaid;
+  resolveVarianceRows.forEach(row => { const v = variancesData.find(x => x._row === row); if (v) v['Resolved'] = 'Yes'; });
   renderTrips();
-  toast(coworker + ' marked Paid', 'ok');
+  toast(coworker + ' marked Paid (' + amountPaid + ')' + (resolveVarianceRows.length ? ' — variance applied' : ''), 'ok');
 }
 
 // ---- BATCH PRINT BY WEEK ----

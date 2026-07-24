@@ -309,6 +309,9 @@ select.form-input{cursor:pointer}
 #weekPrintArea{ display:none }
 .print-week-hdr{ font-size:16px; font-weight:700; color:#0047AB; margin-bottom:14px; padding-bottom:8px; border-bottom:2px solid #0047AB }
 .print-trip-block{ margin-bottom:18px; page-break-inside:avoid }
+.print-recap{ margin-bottom:16px; padding-bottom:10px; border-bottom:1px solid #999; font-size:13px }
+.print-recap-tbl{ width:100%; border-collapse:collapse; font-size:11px; margin:6px 0 }
+.print-recap-tbl th, .print-recap-tbl td{ border:1px solid #999; padding:4px 6px; text-align:left }
 .print-trip-hdr{ font-size:13px; margin-bottom:6px }
 .print-trip-tbl{ width:100%; border-collapse:collapse; font-size:12px; table-layout:fixed }
 .print-trip-tbl th, .print-trip-tbl td{ border:1px solid #999; padding:6px 8px; text-align:left; height:30px; vertical-align:middle; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
@@ -553,6 +556,7 @@ select.form-input{cursor:pointer}
     <span style="flex:1"></span>
     <input class="form-input" type="week" id="printWeekInput" style="width:150px" title="Pick a week to print">
     <button class="btn btn-outline" onclick="printWeekBatch()">🖨 Print Week</button>
+    <button class="btn btn-outline" onclick="copyEmailRecap()">📧 Copy Email Recap</button>
   </div>
   <div id="tripDraftPanel" style="display:none;margin-bottom:12px"></div>
   <div class="tbl-wrap">
@@ -1925,6 +1929,20 @@ async function printWeekBatch(){
 
   document.getElementById('weekPrintArea').innerHTML = `
     <div class="print-week-hdr">🧭 D&A Hub — Trip Payment Sheet — Week of ${res.weekStart} to ${res.weekEnd}</div>
+    <div class="print-recap">
+      <div>Total trip expenses this week: <b>${res.batchTotal}</b></div>
+      ${res.cofferVariances.length ? `
+        <div style="margin-top:8px"><b>🏦 Coffer adjustments</b> — cash already held from previously shortened trips:</div>
+        <table class="print-recap-tbl">
+          <thead><tr><th>Origin Trip</th><th>Coworker</th><th>Reason</th><th>Amount</th></tr></thead>
+          <tbody>
+            ${res.cofferVariances.map(v => `<tr><td>${v['Origin Trip ID']}</td><td>${v['Coworker']}</td><td>${v['Detail']||''}</td><td>-${v['Amount']}</td></tr>`).join('')}
+          </tbody>
+        </table>
+        <div>Total adjustment: <b>-${res.cofferTotal}</b></div>
+      ` : ''}
+      <div style="margin-top:8px;font-size:14px">➜ <b>Net amount to request from Finance: ${res.netRequest}</b></div>
+    </div>
     ${res.trips.map(g => `
       <div class="print-trip-block">
         <div class="print-trip-hdr">
@@ -1950,6 +1968,41 @@ async function printWeekBatch(){
   fetchTrips(); // refresh local state — some rows may have just flipped to Available
 }
 window.addEventListener('afterprint', () => document.body.classList.remove('printing-week'));
+
+function buildEmailRecap_(res){
+  const lines = [];
+  lines.push(`Trip funding request — week of ${res.weekStart} to ${res.weekEnd}`);
+  lines.push('');
+  lines.push(`Total trip expenses this week: ${res.batchTotal}`);
+  if (res.cofferVariances.length) {
+    lines.push('');
+    lines.push('Coffer adjustments (cash already held from previously shortened trips):');
+    res.cofferVariances.forEach(v => {
+      lines.push(`  - ${v['Origin Trip ID']} / ${v['Coworker']} — ${v['Detail']||''} — -${v['Amount']}`);
+    });
+    lines.push(`  Total adjustment: -${res.cofferTotal}`);
+  }
+  lines.push('');
+  lines.push(`Net amount requested: ${res.netRequest}`);
+  return lines.join('\n');
+}
+
+async function copyEmailRecap(){
+  const wkInput = document.getElementById('printWeekInput');
+  const weekVal = wkInput.value || currentIsoWeekValue_();
+  const monday = isoWeekToMonday_(weekVal);
+  const weekOf = toLocalISO_(monday);
+  const res = await postAction({ action: 'printWeek', weekOf });
+  if (!res) return;
+  const text = buildEmailRecap_(res);
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('Recap copied — paste into your email', 'ok');
+  } catch(e) {
+    prompt('Copy this recap manually:', text);
+  }
+  fetchTrips();
+}
 
 // ---- SCHEDULE CALENDAR VIEW ----
 let schedCalDate = new Date(); // current displayed month

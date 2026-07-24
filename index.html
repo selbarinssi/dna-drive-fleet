@@ -909,6 +909,7 @@ select.form-input{cursor:pointer}
         <button class="fbtn active" onclick="filterVariances('open',this)">Open</button>
         <button class="fbtn" onclick="filterVariances('all',this)">All</button>
       </div>
+      <div id="variancesSummary" style="margin-bottom:10px"></div>
       <div id="variancesList" class="cw-list" style="max-height:360px"></div>
     </div>
     <div class="modal-foot">
@@ -1056,34 +1057,50 @@ function filterVariances(f, el){
   el.classList.add('active');
   renderVariancesList();
 }
+function variancesRowHtml_(v){
+  const amt = Number(v['Amount']);
+  const sign = amt > 0 ? '+' : '';
+  const color = amt > 0 ? 'var(--ok)' : 'var(--danger)';
+  const resolved = v['Resolved'] === 'Yes';
+  return `<div class="cw-row" style="justify-content:space-between;align-items:center">
+    <span>
+      <b>${v['Coworker']}</b> <span style="color:var(--t3)">— from ${v['Origin Trip ID']} (${v['Created Date']})</span>
+      ${resolved ? `<span class="badge b-gray" style="margin-left:6px">Resolved${v['Resolved Note'] ? ': '+v['Resolved Note'] : ''}</span>` : ''}
+    </span>
+    <span style="white-space:nowrap">
+      <b style="color:${color}">${sign}${amt}</b>
+      ${!resolved ? `<button class="act-btn diag" style="margin-left:8px" onclick="resolveVarianceRow(${v._row},'${v['Type']}')">Resolve</button>` : ''}
+    </span>
+  </div>`;
+}
 function renderVariancesList(){
   const rows = variancesData.filter(v => variancesFilter === 'all' || v['Resolved'] !== 'Yes');
+  const coffer   = rows.filter(v => v['Type'] === 'Coffer');
+  const personal = rows.filter(v => v['Type'] === 'Personal');
+  const openSum = arr => arr.filter(v=>v['Resolved']!=='Yes').reduce((s,v)=>s+Number(v['Amount']),0);
+  const cofferSum = openSum(coffer), personalSum = openSum(personal);
+
+  document.getElementById('variancesSummary').innerHTML = `
+    <div class="cw-row" style="justify-content:space-between;font-weight:600">
+      <span>🏦 Coffer: <span style="color:${cofferSum>=0?'var(--ok)':'var(--danger)'}">${cofferSum}</span> <span class="form-hint" style="margin:0">— deduct from next Finance ask</span></span>
+      <span>👤 Personal: <span style="color:${personalSum>=0?'var(--ok)':'var(--danger)'}">${personalSum}</span> <span class="form-hint" style="margin:0">— net into their next payout</span></span>
+    </div>`;
+
   const box = document.getElementById('variancesList');
   if(!rows.length){ box.innerHTML = '<div class="form-hint">No variances found</div>'; return; }
-  box.innerHTML = rows.map(v => {
-    const amt = Number(v['Amount']);
-    const sign = amt > 0 ? '+' : '';
-    const color = amt > 0 ? 'var(--ok)' : 'var(--danger)';
-    const resolved = v['Resolved'] === 'Yes';
-    return `<div class="cw-row" style="justify-content:space-between;align-items:center">
-      <span>
-        <b>${v['Coworker']}</b> <span style="color:var(--t3)">— from ${v['Origin Trip ID']} (${v['Created Date']})</span>
-        ${resolved ? `<span class="badge b-gray" style="margin-left:6px">Resolved${v['Resolved In Trip ID'] ? ' via '+v['Resolved In Trip ID'] : ''}</span>` : ''}
-      </span>
-      <span style="white-space:nowrap">
-        <b style="color:${color}">${sign}${amt}</b>
-        ${!resolved ? `<button class="act-btn diag" style="margin-left:8px" onclick="resolveVarianceRow(${v._row})">Resolve</button>` : ''}
-      </span>
-    </div>`;
-  }).join('');
+  const group = (title, arr) => arr.length ? `<div class="form-hint" style="margin:8px 0 4px;font-weight:600">${title}</div>${arr.map(variancesRowHtml_).join('')}` : '';
+  box.innerHTML = group('🏦 Coffer', coffer) + group('👤 Personal', personal);
 }
-async function resolveVarianceRow(row){
-  const resolvedInTripId = prompt('Resolved via which Trip ID? (leave blank if written off / not tied to a trip)') || '';
-  const res = await postAction({ action: 'resolveVariance', row, resolvedInTripId });
+async function resolveVarianceRow(row, type){
+  const note = type === 'Coffer'
+    ? (prompt('Note (e.g. "applied to July 27 Finance request") — leave blank if not needed') || '')
+    : (prompt('Resolved via which Trip ID? (leave blank if written off)') || '');
+  const res = await postAction({ action: 'resolveVariance', row, note });
   if(!res) return;
   const v = variancesData.find(x => x._row === row);
-  if (v) { v['Resolved'] = 'Yes'; v['Resolved In Trip ID'] = resolvedInTripId; }
+  if (v) { v['Resolved'] = 'Yes'; v['Resolved Note'] = note; }
   renderVariancesList();
+  renderTrips();
   toast('Variance resolved', 'ok');
 }
 
@@ -1715,6 +1732,12 @@ function tripStatusBadge(status){
   return map[status] || {label: status || '—', cls:'b-gray'};
 }
 function tripsById_(){ const m = {}; trips.forEach(t => m[t['Trip ID']] = t); return m; }
+function coworkerVarianceBadge_(coworker){
+  if (!isAdmin() || !variancesData.length) return '';
+  const open = variancesData.filter(v => v['Coworker'] === coworker && v['Type'] === 'Personal' && v['Resolved'] !== 'Yes')
+                             .reduce((s,v)=>s+Number(v['Amount']),0);
+  return open ? ` <span title="Open personal variance: ${open}" style="cursor:help">⚠️</span>` : '';
+}
 
 async function fetchTrips(){
   try {
@@ -1729,6 +1752,7 @@ async function fetchTrips(){
       tripNights = data.nights;
       tripsLoaded = true;
       renderTrips();
+      if (isAdmin()) fetchVariances();
     } else {
       toast('Failed to load trips', 'err');
     }
@@ -1792,7 +1816,7 @@ function renderTrips(){
 
     return `<tr${isGroupStart ? ' style="border-top:2px solid var(--bd)"' : ''}>
       <td class="mono" style="font-size:11px">${isGroupStart ? p['Trip ID'] + '<div class="form-hint" style="margin:0">'+(t['Requester']||'')+'</div>' : ''}</td>
-      <td>${p['Coworker']}</td>
+      <td>${p['Coworker']}${coworkerVarianceBadge_(p['Coworker'])}</td>
       <td>${p['Destination']}</td>
       <td>${p['Start']}</td>
       <td>${p['End']}</td>

@@ -1081,8 +1081,10 @@ function renderVariancesList(){
   const cofferSum = openSum(coffer), personalSum = openSum(personal);
 
   document.getElementById('variancesSummary').innerHTML = `
-    <div class="cw-row" style="justify-content:space-between;font-weight:600">
-      <span>🏦 Coffer: <span style="color:${cofferSum>=0?'var(--ok)':'var(--danger)'}">${cofferSum}</span> <span class="form-hint" style="margin:0">— deduct from next Finance ask</span></span>
+    <div class="cw-row" style="justify-content:space-between;align-items:center;font-weight:600">
+      <span>🏦 Coffer: <span style="color:${cofferSum>=0?'var(--ok)':'var(--danger)'}">${cofferSum}</span> <span class="form-hint" style="margin:0">— deduct from next Finance ask</span>
+        ${cofferSum !== 0 ? `<button class="act-btn oil" style="margin-left:8px" onclick="applyAllCoffer()">Apply to next request</button>` : ''}
+      </span>
       <span>👤 Personal: <span style="color:${personalSum>=0?'var(--ok)':'var(--danger)'}">${personalSum}</span> <span class="form-hint" style="margin:0">— net into their next payout</span></span>
     </div>`;
 
@@ -1090,6 +1092,19 @@ function renderVariancesList(){
   if(!rows.length){ box.innerHTML = '<div class="form-hint">No variances found</div>'; return; }
   const group = (title, arr) => arr.length ? `<div class="form-hint" style="margin:8px 0 4px;font-weight:600">${title}</div>${arr.map(variancesRowHtml_).join('')}` : '';
   box.innerHTML = group('🏦 Coffer', coffer) + group('👤 Personal', personal);
+}
+async function applyAllCoffer(){
+  const open = variancesData.filter(v => v['Type']==='Coffer' && v['Resolved']!=='Yes');
+  if(!open.length) return;
+  const total = open.reduce((s,v)=>s+Number(v['Amount']),0);
+  if(!confirm(`Mark ${open.length} coffer variance(s) totaling ${total} as applied?\n\nConfirm you've deducted ${total} from your next Finance request before continuing.`)) return;
+  const note = prompt('Optional note (e.g. which request/date this was applied to)') || '';
+  for (const v of open) {
+    await postAction({ action:'resolveVariance', row: v._row, note });
+    v['Resolved'] = 'Yes'; v['Resolved Note'] = note;
+  }
+  renderVariancesList();
+  toast('Coffer variances applied', 'ok');
 }
 async function resolveVarianceRow(row, type){
   const note = type === 'Coffer'
@@ -2369,10 +2384,9 @@ async function saveTripEdit(tripId, tripObj){
   };
   const res = await postAction({ action:'updateTrip', tripId, fields });
   if(!res) return;
-  const t = trips.find(x=>x['Trip ID']===tripId);
-  if(t) Object.assign(t, fields);
-  closeModal('tripOverlay'); renderTrips();
-  toast('Trip updated','ok');
+  closeModal('tripOverlay');
+  await fetchTrips(); // full refresh — cascade + any supplemental rows happen server-side
+  toast('Trip updated', 'ok');
 }
 function editDraft(i){
   editingTripId = null; editingDraftIndex = i;

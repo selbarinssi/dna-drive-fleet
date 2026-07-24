@@ -1881,7 +1881,9 @@ async function markPaid(tripId, coworker){
   let resolveVarianceRows = [];
   let amountPaid = expenses;
 
+  console.log('DEBUG coworker=', JSON.stringify(coworker), 'variancesData=', JSON.stringify(variancesData));
   const openVariances = variancesData.filter(v => v['Coworker'] === coworker && v['Type'] === 'Personal' && v['Resolved'] !== 'Yes');
+  console.log('DEBUG openVariances=', JSON.stringify(openVariances));
   if (openVariances.length) {
     const total = openVariances.reduce((s,v)=>s+Number(v['Amount']),0);
     const detail = openVariances.map(v => `  • ${v['Origin Trip ID']}: ${v['Detail']||''} (${v['Amount']})`).join('\n');
